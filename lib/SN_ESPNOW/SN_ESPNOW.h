@@ -5,7 +5,7 @@
 
 //Structure example to send data
 //Must match the receiver structure
-typedef struct struct_telemetry_message {
+typedef struct outgoing_telemetry_message {
     float GPS_lat;
     float GPS_lon;
     float GPS_time;
@@ -22,9 +22,9 @@ typedef struct struct_telemetry_message {
     float Main_Bus_I;
     float temp;
     int RSSI;
-} struct_telemetry_message;
+} outgoing_telemetry_message;
 
-typedef struct struct_telecommand_message {
+typedef struct incoming_telecommand_message {
     uint8_t Command;
     uint8_t Comm_Mode;
     uint8_t Joystick_X;
@@ -36,7 +36,12 @@ typedef struct struct_telecommand_message {
     uint8_t Button_C;
     uint8_t Button_D;
     uint8_t Encoder_Pos;
-} struct_telecommand_message;
+    uint8_t RSSI;
+    uint8_t Headlights_On;
+    uint8_t Buzzer;
+
+
+} incoming_telecommand_message;
 
 void SN_ESPNOW_Init();
 
