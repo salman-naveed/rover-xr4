@@ -16,10 +16,10 @@ esp_now_peer_info_t peerInfo;
 #endif
 
 // Create a struct_message to hold telemetry data (OBC --> RCU)
-struct_telemetry_message telemetry_message;
+outgoing_telemetry_message telemetry_message;
 
 // Create a struct_message to hold telecommand data (RCU --> OBC)
-struct_telecommand_message telecommand_message;
+incoming_telecommand_message telecommand_message;
 
 // Variable to store if sending data was successful
 String success;
