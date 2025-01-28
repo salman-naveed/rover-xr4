@@ -31,9 +31,9 @@ void loop() {
     // OBC Handler
     SN_OBC_Handler();
 
-  #elif SN_XR4_BOARD_TYPE == SN_XR4_RCU_ESP32
+  #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
     // RCU Handler
-    SN_RCU_Handler();
+    SN_CTU_Handler();
   #endif
 }
 
