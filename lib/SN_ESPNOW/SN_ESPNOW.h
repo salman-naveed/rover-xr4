@@ -3,9 +3,8 @@
 // #include <esp_now.h>
 #include <SN_XR_Board_Types.h>
 
-//Structure example to send data
-//Must match the receiver structure
-typedef struct outgoing_telemetry_message {
+// Create a struct_message to hold telemetry data (OBC --> CTU)
+typedef struct OBC_telemetry_message {
     float GPS_lat;
     float GPS_lon;
     float GPS_time;
@@ -22,15 +21,16 @@ typedef struct outgoing_telemetry_message {
     float Main_Bus_I;
     float temp;
     int RSSI;
-} outgoing_telemetry_message;
+} OBC_telemetry_message_t;
 
-typedef struct incoming_telecommand_message {
+// Create a struct_message to hold telecommand data (CTU --> OBC)
+typedef struct CTU_telecommand_message {
     uint8_t Command;
     uint8_t Comm_Mode;
     uint8_t Joystick_X;
     uint8_t Joystick_Y;
     uint8_t Emergency_Stop;
-    uint8_t Arm;
+    uint8_t Armed;
     uint8_t Button_A;
     uint8_t Button_B;
     uint8_t Button_C;
@@ -41,7 +41,7 @@ typedef struct incoming_telecommand_message {
     uint8_t Buzzer;
 
 
-} incoming_telecommand_message;
+} CTU_telecommand_message_t;
 
 void SN_ESPNOW_Init();
 
