@@ -5,6 +5,9 @@
 uint16_t joystick_x_adc_val, joystick_y_adc_val; 
 float x_volt, y_volt;
 
+// X-axis --> Forward/Backward
+// Y-axis --> Left/Right
+
 // Joystick Presets
 const int joystick_x_neutral = 1856;
 const int joystick_y_neutral = 1880;
@@ -58,8 +61,19 @@ uint16_t SN_Joystick_ReadRawADCValues(){
 JoystickReceivedValues_t SN_Joystick_OBC_MapADCValues(uint16_t joystick_x_adc_val, uint16_t joystick_y_adc_val){
     int16_t joystick_x_mapped_val, joystick_y_mapped_val;
 
-    joystick_x_mapped_val = map(joystick_x_adc_val, joystick_min, joystick_max, -100, 100);
-    joystick_y_mapped_val = map(joystick_y_adc_val, joystick_min, joystick_max, -100, 100);
+    if(abs(joystick_x_adc_val - joystick_x_neutral) < joystick_x_deadband){
+        joystick_x_mapped_val = 0;
+    }
+    else{
+        joystick_x_mapped_val = map(joystick_x_adc_val, joystick_min, joystick_max, -100, 100);
+    }
+
+    if(abs(joystick_y_adc_val - joystick_y_neutral) < joystick_y_deadband){
+        joystick_y_mapped_val = 0;
+    }
+    else{
+        joystick_y_mapped_val = map(joystick_y_adc_val, joystick_min, joystick_max, -100, 100);
+    }
 
     return {joystick_x_mapped_val, joystick_y_mapped_val};
 }
