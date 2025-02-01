@@ -2,9 +2,37 @@
 #include <SN_Handler.h>
 #include <SN_ESPNOW.h>
 #include <SN_Common.h>
+#include <SN_Logger.h>
+#include <SN_Joystick.h>
+#include <SN_XR_Board_Types.h>
+
+#include <stdint.h>
+#include <stdbool.h>
 
 extern xr4_system_context_t xr4_system_context;
 
+
+extern bool EMERGENCY_STOP_ACTIVE;
+extern bool ARMED;
+extern bool HEADLIGHTS_ON;
+
+extern bool ERROR_EVENT;
+
+// Function to set a specific flag in the variable
+void set_flag(uint16_t *flags, uint8_t bit_position, bool value) {
+    if (value) {
+        *flags |= (1 << bit_position); // Set the bit
+    } else {
+        *flags &= ~(1 << bit_position); // Clear the bit
+    }
+}
+
+// Function to get the value of a specific flag
+bool get_flag(uint16_t flags, uint8_t bit_position) {
+    return (flags & (1 << bit_position)) != 0;
+}
+
+//  ----------------- CTU Handler -----------------
 
 #if SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
 #include <XR4_RCU_Telecommands.h>
@@ -24,64 +52,89 @@ extern OBC_telemetry_message_t telemetry_message;
 
 #if SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
 
-void SN_CTU_Handler(){
-  // RCU Handler
+void SN_CTU_MainHandler(){
+  // CTU Handler
   SN_CTU_compile_Telecommand_Message();
 
   SN_ESPNOW_SendTelecommand();
 
-  delay(1000);
-}
-
-CTU_telecommand_message_t SN_CTU_compile_Telecommand_Message() {
-  telecommand_message.Command = xr4_system_context.Command;
-  telecommand_message.Comm_Mode = SN_CTU_get_OBC_Communication_Mode();
-  telecommand_message.Joystick_X = xr4_system_context.Joystick_X;
-  telecommand_message.Joystick_Y = xr4_system_context.Joystick_Y;
-  telecommand_message.Emergency_Stop = SN_CTU_read_Emergency_Stop();
-  telecommand_message.Arm = 0;
-  telecommand_message.Button_A = 0;
-  telecommand_message.Button_B = 1;
-  telecommand_message.Button_C = 0;
-  telecommand_message.Button_D = 1;
-  telecommand_message.Encoder_Pos = 1;
-
-  return telecommand_message;
 }
 
 uint8_t SN_CTU_get_OBC_Communication_Mode() {
   return SET_OBC_AS_ESPNOW_PEER_CONTROL_MODE;
 }
 
-uint8_t SN_CTU_read_Joystick(int axis) {
-  // test joystick values, to be replaced by actual functionality to read joystick values from analog pins via ADS1115 ADC
-  if (axis == JOYSTICK_X_AXIS) {
-    uint8_t joystick_x = joystick_test_x++; 
-    if(joystick_test_x > 255) {
-      joystick_test_x = 0;
-    }
-    return joystick_x;
-  } else if (axis == JOYSTICK_Y_AXIS) {
-    uint8_t joystick_y = joystick_test_y++;
-    if(joystick_test_y > 255) {
-      joystick_test_y = 0;
-    }
-    return joystick_y;
-  }
-  return 0;
-}
 
 uint8_t SN_CTU_read_Emergency_Stop() {
   return EMERGENCY_STOP_ACTIVE;
 }
+// --------------------------------------------
+
+// ---------------- OBC Handler ----------------
 
 #elif SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 
-void SN_OBC_Handler(){
+
+
+void SN_OBC_TurnOnHeadlights() {
+  xr4_system_context.Headlights_On = 1;
+
+  // add GPIO control code here for headlights
+}
+
+void SN_OBC_TurnOffHeadlights() {
+  xr4_system_context.Headlights_On = 0;
+
+  // add GPIO control code here for headlights
+}
+
+void SN_OBC_ExecuteCommands() {
+  // Execute HIGH PRIORITY commands received from CTU
+  if(xr4_system_context.Emergency_Stop == 1 && xr4_system_context.Armed == 0) {
+    EMERGENCY_STOP_ACTIVE = true;
+    ARMED = false;
+  } else if(xr4_system_context.Emergency_Stop == 1 && xr4_system_context.Armed == 1) {
+    EMERGENCY_STOP_ACTIVE = true;
+    ARMED = false;
+  } else if(xr4_system_context.Emergency_Stop == 0 && xr4_system_context.Armed == 1) {
+    EMERGENCY_STOP_ACTIVE = false;
+    ARMED = true;
+  } else if(xr4_system_context.Emergency_Stop == 0 && xr4_system_context.Armed == 0) {
+    EMERGENCY_STOP_ACTIVE = false;
+    ARMED = false;
+  } else {
+    ERROR_EVENT = true;
+  }
+
+  // Execute LOW PRIORITY commands received from CTU
+  if(xr4_system_context.Headlights_On == 1) {
+    SN_OBC_TurnOnHeadlights();
+  } else if(xr4_system_context.Headlights_On == 0) {
+    SN_OBC_TurnOffHeadlights();
+  }
+
+  // add handling for COMMAND & COMM_MODE
+
+}
+
+void SN_OBC_DrivingHandler() {
+
+  JoystickReceivedValues_t joystick_values;
+
+  joystick_values = SN_Joystick_OBC_MapADCValues(xr4_system_context.Joystick_X, xr4_system_context.Joystick_Y);
+
+}
+
+
+void SN_OBC_MainHandler(){
   // OBC Handler
-  // Serial.println("OBC Handler");
+  SN_OBC_ExecuteCommands();
+
+
+  SN_OBC_DrivingHandler();
+
+
   SN_ESPNOW_SendTelemetry();
-  // delay(1000);
 }
 
 
