@@ -8,7 +8,6 @@
 
 extern xr4_system_context_t xr4_system_context;
 
-
 esp_now_peer_info_t peerInfo;
 
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
@@ -32,7 +31,7 @@ String success;
 void OnTelemetrySend(const uint8_t *mac_addr, esp_now_send_status_t status);
 void OnTelecommandSend(const uint8_t *mac_addr, esp_now_send_status_t status);
 
-
+// ----------------- Initialization Functions -----------------
 void SN_ESPNOW_Init(){
   // Init ESP-NOW
   if (esp_now_init() != ESP_OK) {
@@ -80,11 +79,13 @@ void SN_ESPNOW_add_peer(){
   }
     logMessage(true, "SN_ESPNOW_add_peer", "Peer added");
 }
+// --------------------------------------------------------
 
 // ----------------- Data Send Functions -----------------
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 void SN_ESPNOW_SendTelemetry(){
     // Send message via ESP-NOW
+    SN_Telemetry_updateStruct(xr4_system_context);
     esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &telemetry_message, sizeof(telemetry_message));
 
     if (result == ESP_OK) {
@@ -97,6 +98,7 @@ void SN_ESPNOW_SendTelemetry(){
 #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
 void SN_ESPNOW_SendTelecommand(){
     // Send message via ESP-NOW
+    SN_Telecommand_updateStruct(xr4_system_context);
     esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &telecommand_message, sizeof(telecommand_message));
 
     if (result == ESP_OK) {
@@ -109,7 +111,7 @@ void SN_ESPNOW_SendTelecommand(){
 #endif
 // --------------------------------------------------------
 
-// ----------------- Update Telemetry / Telecommand Structs ---------------
+// ----------------- Update Telemetry / Telecommand Structs before Sending ---------------
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 void SN_Telemetry_updateStruct(xr4_system_context_t context){
   telemetry_message.GPS_lat = context.GPS_lat;
@@ -126,24 +128,18 @@ void SN_Telemetry_updateStruct(xr4_system_context_t context){
   telemetry_message.Mag_Z = context.Mag_Z;
   telemetry_message.Main_Bus_V = context.Main_Bus_V;
   telemetry_message.Main_Bus_I = context.Main_Bus_I;
-  telemetry_message.RSSI = context.OBC_RSSI;
+  telemetry_message.OBC_RSSI = context.OBC_RSSI;
   telemetry_message.temp = context.temp;
 }
 
 #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
 void SN_Telecommand_updateStruct(xr4_system_context_t context){
+
   telecommand_message.Command = context.Command;
-  telecommand_message.Comm_Mode = context.Comm_Mode;
-  telecommand_message.Emergency_Stop = context.Emergency_Stop;
-  telecommand_message.Armed = context.Armed;
-  telecommand_message.Encoder_Pos = context.Encoder_Pos;
   telecommand_message.Joystick_X = context.Joystick_X;
   telecommand_message.Joystick_Y = context.Joystick_Y;
-  telecommand_message.Button_A = context.Button_A;
-  telecommand_message.Button_B = context.Button_B;
-  telecommand_message.Button_C = context.Button_C;
-  telecommand_message.Button_D = context.Button_D;
-  telecommand_message.Headlights_On = context.Headlights_On;
+  telecommand_message.Encoder_Pos = context.Encoder_Pos;
+  telecommand_message.flags = context.flags;  
   telecommand_message.RSSI = context.CTU_RSSI;
 
 }
@@ -188,36 +184,27 @@ void OnTelecommandReceive(const uint8_t * mac, const uint8_t *incoming_telecomma
     logMessage(true, "OnTelecommandReceive", "Bytes received: %d", len);
 
     logMessage(true, "OnTelecommandReceive", "Command: %d", telecommand_message.Command);
-    logMessage(true, "OnTelecommandReceive", "Comm_Mode: %d", telecommand_message.Comm_Mode);
     logMessage(true, "OnTelecommandReceive", "Joystick_X: %d", telecommand_message.Joystick_X);
     logMessage(true, "OnTelecommandReceive", "Joystick_Y: %d", telecommand_message.Joystick_Y);
-    logMessage(true, "OnTelecommandReceive", "Emergency_Stop: %d", telecommand_message.Emergency_Stop);
-    logMessage(true, "OnTelecommandReceive", "Arm: %d", telecommand_message.Armed);
-    logMessage(true, "OnTelecommandReceive", "Button_A: %d", telecommand_message.Button_A);
-    logMessage(true, "OnTelecommandReceive", "Button_B: %d", telecommand_message.Button_B);
-    logMessage(true, "OnTelecommandReceive", "Button_C: %d", telecommand_message.Button_C);
-    logMessage(true, "OnTelecommandReceive", "Button_D: %d", telecommand_message.Button_D);
     logMessage(true, "OnTelecommandReceive", "Encoder_Pos: %d", telecommand_message.Encoder_Pos);
-
+    logMessage(true, "OnTelecommandReceive", "Flags: %d", telecommand_message.flags);
     logMessage(true, "OnTelecommandReceive", "------------------------------------------");
 
     // Update the OBC context with the received telecommand
     xr4_system_context.Command = telecommand_message.Command;
-    xr4_system_context.Comm_Mode = telecommand_message.Comm_Mode;
     xr4_system_context.Joystick_X = telecommand_message.Joystick_X;
     xr4_system_context.Joystick_Y = telecommand_message.Joystick_Y;
-    xr4_system_context.Emergency_Stop = telecommand_message.Emergency_Stop;
-    xr4_system_context.Armed = telecommand_message.Armed;
-    xr4_system_context.Button_A = telecommand_message.Button_A;
-    xr4_system_context.Button_B = telecommand_message.Button_B;
-    xr4_system_context.Button_C = telecommand_message.Button_C;
-    xr4_system_context.Button_D = telecommand_message.Button_D;
     xr4_system_context.Encoder_Pos = telecommand_message.Encoder_Pos;
-    xr4_system_context.RSSI = telecommand_message.RSSI;
-    xr4_system_context.Headlights_On = telecommand_message.Headlights_On;
-    xr4_system_context.Buzzer = telecommand_message.Buzzer;
+    xr4_system_context.CTU_RSSI = telecommand_message.CTU_RSSI;
 
-
+    xr4_system_context.Emergency_Stop = get_flag(telecommand_message.flags, EMERGENCY_STOP_BIT);
+    xr4_system_context.Armed = get_flag(telecommand_message.flags, ARMED_BIT);
+    xr4_system_context.Headlights_On = get_flag(telecommand_message.flags, HEADLIGHTS_ON_BIT);
+    xr4_system_context.Buzzer = get_flag(telecommand_message.flags, BUZZER_BIT);
+    xr4_system_context.Button_A = get_flag(telecommand_message.flags, BUTTON_A_BIT);
+    xr4_system_context.Button_B = get_flag(telecommand_message.flags, BUTTON_B_BIT);
+    xr4_system_context.Button_C = get_flag(telecommand_message.flags, BUTTON_C_BIT);
+    xr4_system_context.Button_D = get_flag(telecommand_message.flags, BUTTON_D_BIT);
 
 }
 #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
@@ -243,7 +230,7 @@ void OnTelemetryReceive(const uint8_t * mac, const uint8_t *incoming_telemetry_d
     xr4_system_context.Main_Bus_V = telemetry_message.Main_Bus_V;
     xr4_system_context.Main_Bus_I = telemetry_message.Main_Bus_I;
     xr4_system_context.temp = telemetry_message.temp;
-    xr4_system_context.RSSI = telemetry_message.RSSI;
+    xr4_system_context.OBC_RSSI = telemetry_message.OBC_RSSI;
 
 }
 #endif

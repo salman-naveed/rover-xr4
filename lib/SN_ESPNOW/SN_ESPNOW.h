@@ -20,27 +20,17 @@ typedef struct OBC_telemetry_message {
     float Main_Bus_V;
     float Main_Bus_I;
     float temp;
-    int RSSI;
+    float OBC_RSSI;
 } OBC_telemetry_message_t;
 
 // Create a struct_message to hold telecommand data (CTU --> OBC)
 typedef struct CTU_telecommand_message {
-    uint8_t Command;
-    uint8_t Comm_Mode;
-    uint8_t Joystick_X;
-    uint8_t Joystick_Y;
-    uint8_t Emergency_Stop;
-    uint8_t Armed;
-    uint8_t Button_A;
-    uint8_t Button_B;
-    uint8_t Button_C;
-    uint8_t Button_D;
-    uint8_t Encoder_Pos;
-    uint8_t RSSI;
-    uint8_t Headlights_On;
-    uint8_t Buzzer;
-
-
+    uint16_t Command;
+    uint16_t Joystick_X;
+    uint16_t Joystick_Y;
+    uint16_t Encoder_Pos;
+    uint16_t flags;         // Bytes structure (8-bit data): | Emergency_Stop | Armed | Button_A | Button_B | Button_C | Button_D | Headlights_On | Buzzer |
+    uint16_t CTU_RSSI;
 } CTU_telecommand_message_t;
 
 void SN_ESPNOW_Init();
