@@ -6,17 +6,23 @@ typedef struct xr4_system_context {
     float GPS_lat;
     float GPS_lon;
     float GPS_time;
+    bool GPS_fix;
+
     float Gyro_X;
     float Gyro_Y;
     float Gyro_Z;
+    
     float Acc_X;
     float Acc_Y;
     float Acc_Z;
+    
     float Mag_X;
     float Mag_Y;
     float Mag_Z;
+    
     float Main_Bus_V;
     float Main_Bus_I;
+    
     float temp;
     float OBC_RSSI;
 
