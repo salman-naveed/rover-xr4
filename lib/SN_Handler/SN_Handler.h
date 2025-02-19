@@ -9,7 +9,7 @@ void SN_OBC_TurnOffHeadlights();
 
 void SN_OBC_DrivingHandler();
 
-void SN_CTU_Handler();
+void SN_CTU_MainHandler();
 
 uint8_t SN_CTU_get_OBC_Communication_Mode();
 

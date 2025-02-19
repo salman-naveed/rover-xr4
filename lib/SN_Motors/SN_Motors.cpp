@@ -1,11 +1,4 @@
-#include <stdio.h>
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_attr.h"
-
-#include "driver/mcpwm.h"
-#include "soc/mcpwm_periph.h"
 
 #include <SN_Motors.h>
 #include <SN_Logger.h>
@@ -13,7 +6,7 @@
 
 // Motor Control
 
-static void SN_Motors__GPIO_Init(){
+static void SN_Motors__GPIO_Init(void){
     // Initialize Motor Control
 
     printf("initializing mcpwm gpio...\n");

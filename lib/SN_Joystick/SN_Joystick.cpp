@@ -35,21 +35,22 @@ void SN_Joystick_Init(){
     logMessage(true, "SN_Joystick_Init", "Joystick Initialized");
 }
 
-uint16_t SN_Joystick_ReadRawADCValues(){
 
-    joystick_x_adc_val = analogRead(joystick_x_pin); 
-    joystick_y_adc_val = analogRead(joystick_y_pin);
+JoystickRawADCValues_t SN_Joystick_ReadRawADCValues() {
+    JoystickRawADCValues_t values;
+    
+    values.joystick_x_raw_val = analogRead(joystick_x_pin); 
+    values.joystick_y_raw_val = analogRead(joystick_y_pin);
 
-    if(abs(joystick_x_adc_val - joystick_x_neutral) < joystick_x_deadband){
-        joystick_x_adc_val = joystick_x_neutral;
+    if (abs(values.joystick_x_raw_val - joystick_x_neutral) < joystick_x_deadband) {
+        values.joystick_x_raw_val = joystick_x_neutral;
     }
 
-    if(abs(joystick_y_adc_val - joystick_y_neutral) < joystick_y_deadband){
-        joystick_y_adc_val = joystick_y_neutral;
+    if (abs(values.joystick_y_raw_val - joystick_y_neutral) < joystick_y_deadband) {
+        values.joystick_y_raw_val = joystick_y_neutral;
     }
 
-    return joystick_x_adc_val, joystick_y_adc_val;
-
+    return values;
 }
 
 #endif
@@ -58,7 +59,7 @@ uint16_t SN_Joystick_ReadRawADCValues(){
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 
 
-JoystickReceivedValues_t SN_Joystick_OBC_MapADCValues(uint16_t joystick_x_adc_val, uint16_t joystick_y_adc_val){
+JoystickMappedValues_t SN_Joystick_OBC_MapADCValues(uint16_t joystick_x_adc_val, uint16_t joystick_y_adc_val){
     int16_t joystick_x_mapped_val, joystick_y_mapped_val;
 
     if(abs(joystick_x_adc_val - joystick_x_neutral) < joystick_x_deadband){

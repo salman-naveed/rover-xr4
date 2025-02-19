@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <SN_Handler.h>
 #include <SN_ESPNOW.h>
-#include <SN_Common.h>
+// #include <SN_Common.h>
 #include <SN_Logger.h>
 #include <SN_Joystick.h>
 #include <SN_XR_Board_Types.h>
@@ -49,11 +49,10 @@ bool get_flag(uint16_t flags, uint8_t bit_position) {
 #define JOYSTICK_X_AXIS 0
 #define JOYSTICK_Y_AXIS 1
 
-extern bool TM_received_rdy_to_copy;
-
 extern telecommand_data_t CTU_out_telecommand_data;
+extern bool CTU_TC_received_data_ready;
+extern uint8_t CTU_TM_last_received_data_type;
 
-uint8_t EMERGENCY_STOP_ACTIVE = 0;
 uint8_t joystick_test_x = 0;
 uint8_t joystick_test_y = 0;
 
@@ -69,9 +68,19 @@ extern uint8_t OBC_TC_last_received_data_type;
 
 void SN_CTU_MainHandler(){
   // CTU Handler
-  SN_CTU_compile_telecommand_data();
+  SN_Telemetry_updateContext(CTU_TM_last_received_data_type);
 
-  SN_ESPNOW_SendTelecommand();
+  
+
+  SN_ESPNOW_SendTelecommand(TC_C2_DATA_MSG);
+
+}
+
+void SN_CTU_JoystickHandler(){
+
+  JoystickRawADCValues_t CTU_joystick_raw_adc_values = SN_Joystick_ReadRawADCValues();
+
+
 
 }
 
@@ -132,7 +141,7 @@ void SN_OBC_ExecuteCommands() {
 
 void SN_OBC_DrivingHandler() {
 
-  JoystickReceivedValues_t joystick_values;
+  JoystickMappedValues_t joystick_values;
 
   joystick_values = SN_Joystick_OBC_MapADCValues(xr4_system_context.Joystick_X, xr4_system_context.Joystick_Y);
 

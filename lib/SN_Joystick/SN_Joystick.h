@@ -6,17 +6,22 @@
 
 void SN_Joystick_Init();
 
-uint16_t SN_Joystick_ReadRawADCValues();
+typedef struct JoystickRawADCValues {
+    uint16_t joystick_x_raw_val;
+    uint16_t joystick_y_raw_val;
+} JoystickRawADCValues_t;
+
+JoystickRawADCValues_t SN_Joystick_ReadRawADCValues();
 
 #endif
 
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 
-typedef struct JoystickReceivedValues {
+typedef struct JoystickMappedValues {
     int16_t joystick_x_mapped_val;
     int16_t joystick_y_mapped_val;
-} JoystickReceivedValues_t;
+} JoystickMappedValues_t;
 
-JoystickReceivedValues_t SN_Joystick_OBC_MapADCValues(uint16_t joystick_x_adc_val, uint16_t joystick_y_adc_val);
+JoystickMappedValues_t SN_Joystick_OBC_MapADCValues(uint16_t joystick_x_adc_val, uint16_t joystick_y_adc_val);
 
 #endif
