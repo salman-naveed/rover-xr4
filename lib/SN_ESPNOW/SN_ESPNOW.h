@@ -2,6 +2,7 @@
 #include <Arduino.h>
 // #include <esp_now.h>
 #include <SN_XR_Board_Types.h>
+#include <SN_Common.h>
 
 typedef enum {
     TM_GPS_DATA_MSG = 0x10,     // GPS data
@@ -61,11 +62,11 @@ typedef struct telecommand_data {
     uint16_t CTU_RSSI;
 } telecommand_data_t;
 
-bool OBC_TC_received_data_ready = false;
-uint8_t OBC_TC_last_received_data_type = 0;
+// bool OBC_TC_received_data_ready;
+// uint8_t OBC_TC_last_received_data_type;
 
-bool CTU_TM_received_data_ready = false;
-uint8_t CTU_TM_last_received_data_type = 0;
+// bool CTU_TM_received_data_ready;
+// uint8_t CTU_TM_last_received_data_type;
 
 void SN_ESPNOW_Init();
 
@@ -79,16 +80,20 @@ void SN_ESPNOW_add_peer();
 
 void SN_ESPNOW_SendTelemetry();
 
-void SN_ESPNOW_SendTelecommand();
+void SN_ESPNOW_SendTelecommand(uint8_t telecommand_type);
 
 void OnTelecommandReceive(const uint8_t * mac, const uint8_t *incoming_telecommand_data, int len);
 
 void OnTelemetryReceive(const uint8_t * mac, const uint8_t *incoming_telemetry_data, int len);
 
-// void SN_Telemetry_updateContext(telemetry_message_t CTU_in_telemetry_message);
+void SN_Telemetry_updateContext(uint8_t CTU_TM_last_received_data_type);
+
+void SN_Telemetry_updateStruct(xr4_system_context_t context);
 
 void SN_Telecommand_updateContext(telecommand_data_t OBC_in_telecommand_data);
 
 void SN_Telemetry_updateStruct(xr4_system_context_t context);
+
+void SN_Telecommand_updateStruct(xr4_system_context_t context);
 
 
