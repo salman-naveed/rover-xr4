@@ -29,11 +29,11 @@ void setup() {
 void loop() {
   #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
     // OBC Handler
-    SN_OBC_Handler();
+    SN_OBC_MainHandler();
 
   #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
-    // RCU Handler
-    SN_CTU_Handler();
+    // CTU Handler
+    SN_CTU_MainHandler();
   #endif
 }
 
