@@ -10,20 +10,33 @@ extern xr4_system_context_t xr4_system_context;
 
 esp_now_peer_info_t peerInfo;
 
+
+
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
   // REPLACE WITH THE MAC OF THE CONTROL & TELEMETRY UNIT (CTU)
   uint8_t broadcastAddress[] = {0x24, 0x0a, 0xc4, 0xc0, 0xe5, 0x78}; // MAC Address of the receiver (SN_XR4_CTU_ESP32 - Control/Telemetry Unit)
 
+  // OBC struct_message to hold outgoing telemetry data (OBC --> CTU)
+  telemetry_GPS_data_t OBC_out_TM_GPS_data;
+  telemetry_IMU_data_t OBC_out_TM_IMU_data;
+  telemetry_HK_data_t OBC_out_TM_HK_data;
+
+  // OBC struct_message to hold incoming telecommand data (CTU --> OBC)
+  telecommand_data_t OBC_in_telecommand_data;
+
 #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
   // REPLACE WITH THE MAC OF THE ON-BOARD COMPUTER UNIT (OBC)
   uint8_t broadcastAddress[] = {0x24, 0x0a, 0xc4, 0xbf, 0x9a, 0xe0}; // MAC Address of the receiver (SN_XR4_OBC_ESP32 - On-Board Computer Unit on the XR4 Rover)
+
+  // CTU struct_message to hold outgoing telecommand data (CTU --> OBC)
+  telecommand_data_t CTU_out_telecommand_data;
+
+  // CTU struct_message to hold incoming telemetry data (OBC --> CTU)
+  telemetry_GPS_data_t CTU_in_TM_GPS_data;
+  telemetry_IMU_data_t CTU_in_TM_IMU_data;
+  telemetry_HK_data_t CTU_in_TM_HK_data;
+
 #endif
-
-// Create a struct_message to hold telemetry data (OBC --> RCU)
-OBC_telemetry_message telemetry_message;
-
-// Create a struct_message to hold telecommand data (RCU --> OBC)
-CTU_telecommand_message telecommand_message;
 
 // Variable to store if sending data was successful
 String success;
@@ -83,10 +96,21 @@ void SN_ESPNOW_add_peer(){
 
 // ----------------- Data Send Functions -----------------
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
-void SN_ESPNOW_SendTelemetry(){
+void SN_ESPNOW_SendTelemetry(uint8_t TM_out_msg_type){
     // Send message via ESP-NOW
     SN_Telemetry_updateStruct(xr4_system_context);
-    esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &telemetry_message, sizeof(telemetry_message));
+
+    esp_err_t result;
+
+    if(TM_out_msg_type == TM_GPS_DATA_MSG){
+      result = esp_now_send(broadcastAddress, (uint8_t *) &OBC_out_TM_GPS_data, sizeof(telemetry_GPS_data_t));
+    }
+    else if(TM_out_msg_type == TM_IMU_DATA_MSG){
+      result = esp_now_send(broadcastAddress, (uint8_t *) &OBC_out_TM_IMU_data, sizeof(telemetry_IMU_data_t));
+    }
+    else if(TM_out_msg_type == TM_HK_DATA_MSG){
+      result = esp_now_send(broadcastAddress, (uint8_t *) &OBC_out_TM_HK_data, sizeof(telemetry_HK_data_t));
+    }
 
     if (result == ESP_OK) {
         logMessage(true, "SN_ESPNOW_SendTelemetry", "Sent with success");
@@ -96,10 +120,15 @@ void SN_ESPNOW_SendTelemetry(){
     }
 }
 #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
-void SN_ESPNOW_SendTelecommand(){
+void SN_ESPNOW_SendTelecommand(uint8_t TC_out_msg_type){
     // Send message via ESP-NOW
     SN_Telecommand_updateStruct(xr4_system_context);
-    esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &telecommand_message, sizeof(telecommand_message));
+
+    esp_err_t result;
+
+    if(TC_out_msg_type == TC_C2_DATA_MSG){
+      result = esp_now_send(broadcastAddress, (uint8_t *) &CTU_out_telecommand_data, sizeof(telecommand_data_t));
+    }
 
     if (result == ESP_OK) {
         logMessage(true, "SN_ESPNOW_SendTelecommand", "Sent with success");
@@ -110,42 +139,6 @@ void SN_ESPNOW_SendTelecommand(){
 }
 #endif
 // --------------------------------------------------------
-
-// ----------------- Update Telemetry / Telecommand Structs before Sending ---------------
-#if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
-void SN_Telemetry_updateStruct(xr4_system_context_t context){
-  telemetry_message.GPS_lat = context.GPS_lat;
-  telemetry_message.GPS_lon = context.GPS_lon;
-  telemetry_message.GPS_time = context.GPS_time;
-  telemetry_message.Acc_X = context.Acc_X;
-  telemetry_message.Acc_Y = context.Acc_Y;
-  telemetry_message.Acc_Z = context.Acc_Z;
-  telemetry_message.Gyro_X = context.Gyro_X;
-  telemetry_message.Gyro_Y = context.Gyro_Y;
-  telemetry_message.Gyro_Z = context.Gyro_Z;
-  telemetry_message.Mag_X = context.Mag_X;
-  telemetry_message.Mag_Y = context.Mag_Y;
-  telemetry_message.Mag_Z = context.Mag_Z;
-  telemetry_message.Main_Bus_V = context.Main_Bus_V;
-  telemetry_message.Main_Bus_I = context.Main_Bus_I;
-  telemetry_message.OBC_RSSI = context.OBC_RSSI;
-  telemetry_message.temp = context.temp;
-}
-
-#elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
-void SN_Telecommand_updateStruct(xr4_system_context_t context){
-
-  telecommand_message.Command = context.Command;
-  telecommand_message.Joystick_X = context.Joystick_X;
-  telecommand_message.Joystick_Y = context.Joystick_Y;
-  telecommand_message.Encoder_Pos = context.Encoder_Pos;
-  telecommand_message.flags = context.flags;  
-  telecommand_message.RSSI = context.CTU_RSSI;
-
-}
-
-#endif
-
 
 // ----------------- Data Send Callbacks -----------------
 // Callback when data is sent
@@ -172,66 +165,173 @@ void OnTelecommandSend(const uint8_t *mac_addr, esp_now_send_status_t status) {
 #endif
 // --------------------------------------------------------
 
+// ----------------- Update Telemetry / Telecommand Structs before Sending ---------------
+#if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
+void SN_Telemetry_updateStruct(xr4_system_context_t context){
+  OBC_out_TM_GPS_data.GPS_lat = context.GPS_lat;
+  OBC_out_TM_GPS_data.GPS_lon = context.GPS_lon;
+  OBC_out_TM_GPS_data.GPS_time = context.GPS_time;
+  OBC_out_TM_GPS_data.GPS_fix = context.GPS_fix;
+
+  OBC_out_TM_IMU_data.Acc_X = context.Acc_X;
+  OBC_out_TM_IMU_data.Acc_Y = context.Acc_Y;
+  OBC_out_TM_IMU_data.Acc_Z = context.Acc_Z;
+  OBC_out_TM_IMU_data.Gyro_X = context.Gyro_X;
+  OBC_out_TM_IMU_data.Gyro_Y = context.Gyro_Y;
+  OBC_out_TM_IMU_data.Gyro_Z = context.Gyro_Z;
+  OBC_out_TM_IMU_data.Mag_X = context.Mag_X;
+  OBC_out_TM_IMU_data.Mag_Y = context.Mag_Y;
+  OBC_out_TM_IMU_data.Mag_Z = context.Mag_Z;
+
+  OBC_out_TM_HK_data.Main_Bus_V = context.Main_Bus_V;
+  OBC_out_TM_HK_data.Main_Bus_I = context.Main_Bus_I;
+  OBC_out_TM_HK_data.OBC_RSSI = context.OBC_RSSI;
+  OBC_out_TM_HK_data.temp = context.temp;
+}
+
+#elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
+void SN_Telecommand_updateStruct(xr4_system_context_t context){
+
+  CTU_out_telecommand_data.Command = context.Command;
+  CTU_out_telecommand_data.Joystick_X = context.Joystick_X;
+  CTU_out_telecommand_data.Joystick_Y = context.Joystick_Y;
+  CTU_out_telecommand_data.Encoder_Pos = context.Encoder_Pos;
+  CTU_out_telecommand_data.flags = context.flags;  
+  CTU_out_telecommand_data.RSSI = context.CTU_RSSI;
+
+}
+
+#endif
+
+
+// --------------------------------------------------------
+
+// ----------------- Update OBC Context with Received Telecommand -----------------
+#if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
+
+void SN_Telecommand_updateContext(telecommand_data_t OBC_in_telecommand_data){
+  if(OBC_TC_received_data_ready) {
+    switch(OBC_TC_last_received_data_type) 
+    {
+      case TC_C2_DATA_MSG:
+        xr4_system_context.Command = OBC_in_telecommand_data.Command;
+        xr4_system_context.Joystick_X = OBC_in_telecommand_data.Joystick_X;
+        xr4_system_context.Joystick_Y = OBC_in_telecommand_data.Joystick_Y;
+        xr4_system_context.Encoder_Pos = OBC_in_telecommand_data.Encoder_Pos;
+        xr4_system_context.CTU_RSSI = OBC_in_telecommand_data.CTU_RSSI;
+
+        xr4_system_context.Emergency_Stop = get_flag(OBC_in_telecommand_data.flags, EMERGENCY_STOP_BIT);
+        xr4_system_context.Armed = get_flag(OBC_in_telecommand_data.flags, ARMED_BIT);
+        xr4_system_context.Headlights_On = get_flag(OBC_in_telecommand_data.flags, HEADLIGHTS_ON_BIT);
+        xr4_system_context.Buzzer = get_flag(OBC_in_telecommand_data.flags, BUZZER_BIT);
+        xr4_system_context.Button_A = get_flag(OBC_in_telecommand_data.flags, BUTTON_A_BIT);
+        xr4_system_context.Button_B = get_flag(OBC_in_telecommand_data.flags, BUTTON_B_BIT);
+        xr4_system_context.Button_C = get_flag(OBC_in_telecommand_data.flags, BUTTON_C_BIT);
+        xr4_system_context.Button_D = get_flag(OBC_in_telecommand_data.flags, BUTTON_D_BIT);
+        break;
+    }
+    OBC_TC_received_data_ready = false;
+  }
+
+}
+
+#elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
+
+void SN_Telemetry_updateContext(telemetry_message_t CTU_in_telemetry_message){
+  if(CTU_TM_received_data_ready){
+    switch(CTU_TM_last_received_data_type)
+    {
+      case TM_GPS_DATA_MSG:
+        xr4_system_context.GPS_lat = CTU_in_telemetry_message.GPS_lat;
+        xr4_system_context.GPS_lon = CTU_in_telemetry_message.GPS_lon;
+        xr4_system_context.GPS_time = CTU_in_telemetry_message.GPS_time;
+        break;
+
+      case TM_IMU_DATA_MSG:
+        xr4_system_context.Gyro_X = CTU_in_telemetry_message.Gyro_X;
+        xr4_system_context.Gyro_Y = CTU_in_telemetry_message.Gyro_Y;
+        xr4_system_context.Gyro_Z = CTU_in_telemetry_message.Gyro_Z;
+        xr4_system_context.Acc_X = CTU_in_telemetry_message.Acc_X;
+        xr4_system_context.Acc_Y = CTU_in_telemetry_message.Acc_Y;
+        xr4_system_context.Acc_Z = CTU_in_telemetry_message.Acc_Z;
+        xr4_system_context.Mag_X = CTU_in_telemetry_message.Mag_X;
+        xr4_system_context.Mag_Y = CTU_in_telemetry_message.Mag_Y;
+        xr4_system_context.Mag_Z = CTU_in_telemetry_message.Mag_Z;
+        break;
+
+      case TM_HK_DATA_MSG:
+        xr4_system_context.Main_Bus_V = CTU_in_telemetry_message.Main_Bus_V;
+        xr4_system_context.Main_Bus_I = CTU_in_telemetry_message.Main_Bus_I;
+        xr4_system_context.temp = CTU_in_telemetry_message.temp;
+        xr4_system_context.OBC_RSSI = CTU_in_telemetry_message.OBC_RSSI;
+        break;
+    }
+    CTU_TM_received_data_ready = false;
+  }
+
+}
+
+#endif
+// --------------------------------------------------------
 
 // ---------------- Data Receive Callbacks ----------------
 // Callback when data is received
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 void OnTelecommandReceive(const uint8_t * mac, const uint8_t *incoming_telecommand_data, int len) {
-    memcpy(&telecommand_message, incoming_telecommand_data, sizeof(telecommand_message));
+  uint8_t OBC_in_TM_msg_type;
 
-    logMessage(true, "OnTelecommandReceive", "Telecommand received -----------------------");
+  memcpy(&OBC_in_TM_msg_type, incoming_telecommand_data, sizeof(uint8_t));
 
-    logMessage(true, "OnTelecommandReceive", "Bytes received: %d", len);
+  if(OBC_in_TM_msg_type == TC_C2_DATA_MSG){
+    memcpy(&OBC_in_telecommand_data, incoming_telecommand_data, sizeof(telecommand_data_t));
+    OBC_TC_last_received_data_type = TC_C2_DATA_MSG;
+  }
+  else {
+    logMessage(true, "OnTelecommandReceive", "Unknown Telecommand Message Type Received");
+  }
 
-    logMessage(true, "OnTelecommandReceive", "Command: %d", telecommand_message.Command);
-    logMessage(true, "OnTelecommandReceive", "Joystick_X: %d", telecommand_message.Joystick_X);
-    logMessage(true, "OnTelecommandReceive", "Joystick_Y: %d", telecommand_message.Joystick_Y);
-    logMessage(true, "OnTelecommandReceive", "Encoder_Pos: %d", telecommand_message.Encoder_Pos);
-    logMessage(true, "OnTelecommandReceive", "Flags: %d", telecommand_message.flags);
-    logMessage(true, "OnTelecommandReceive", "------------------------------------------");
+  logMessage(true, "OnTelecommandReceive", "Telecommand received -----------------------");
+  logMessage(true, "OnTelecommandReceive", "Bytes received: %d", len);
+  logMessage(true, "OnTelecommandReceive", "Command: %d", OBC_in_telecommand_data.Command);
+  logMessage(true, "OnTelecommandReceive", "Joystick_X: %d", OBC_in_telecommand_data.Joystick_X);
+  logMessage(true, "OnTelecommandReceive", "Joystick_Y: %d", OBC_in_telecommand_data.Joystick_Y);
+  logMessage(true, "OnTelecommandReceive", "Encoder_Pos: %d", OBC_in_telecommand_data.Encoder_Pos);
+  logMessage(true, "OnTelecommandReceive", "Flags: %d", OBC_in_telecommand_data.flags);
+  logMessage(true, "OnTelecommandReceive", "------------------------------------------");
 
-    // Update the OBC context with the received telecommand
-    xr4_system_context.Command = telecommand_message.Command;
-    xr4_system_context.Joystick_X = telecommand_message.Joystick_X;
-    xr4_system_context.Joystick_Y = telecommand_message.Joystick_Y;
-    xr4_system_context.Encoder_Pos = telecommand_message.Encoder_Pos;
-    xr4_system_context.CTU_RSSI = telecommand_message.CTU_RSSI;
-
-    xr4_system_context.Emergency_Stop = get_flag(telecommand_message.flags, EMERGENCY_STOP_BIT);
-    xr4_system_context.Armed = get_flag(telecommand_message.flags, ARMED_BIT);
-    xr4_system_context.Headlights_On = get_flag(telecommand_message.flags, HEADLIGHTS_ON_BIT);
-    xr4_system_context.Buzzer = get_flag(telecommand_message.flags, BUZZER_BIT);
-    xr4_system_context.Button_A = get_flag(telecommand_message.flags, BUTTON_A_BIT);
-    xr4_system_context.Button_B = get_flag(telecommand_message.flags, BUTTON_B_BIT);
-    xr4_system_context.Button_C = get_flag(telecommand_message.flags, BUTTON_C_BIT);
-    xr4_system_context.Button_D = get_flag(telecommand_message.flags, BUTTON_D_BIT);
-
+  OBC_TC_received_data_ready = true;
 }
+
 #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
-// Callback when data is received
+// Callback when a Telemetry data message is received by CTU
 void OnTelemetryReceive(const uint8_t * mac, const uint8_t *incoming_telemetry_data, int len) {
-    memcpy(&telemetry_message, incoming_telemetry_data, sizeof(telemetry_message));
 
-    logMessage(true, "OnTelemetryReceive", "Bytes received: %d", len);
+  uint8_t CTU_in_TM_msg_type;
 
-    // Update the CTU context with the received telemetry
-    xr4_system_context.GPS_lat = telemetry_message.GPS_lat;
-    xr4_system_context.GPS_lon = telemetry_message.GPS_lon;
-    xr4_system_context.GPS_time = telemetry_message.GPS_time;
-    xr4_system_context.Gyro_X = telemetry_message.Gyro_X;
-    xr4_system_context.Gyro_Y = telemetry_message.Gyro_Y;
-    xr4_system_context.Gyro_Z = telemetry_message.Gyro_Z;
-    xr4_system_context.Acc_X = telemetry_message.Acc_X;
-    xr4_system_context.Acc_Y = telemetry_message.Acc_Y;
-    xr4_system_context.Acc_Z = telemetry_message.Acc_Z;
-    xr4_system_context.Mag_X = telemetry_message.Mag_X;
-    xr4_system_context.Mag_Y = telemetry_message.Mag_Y;
-    xr4_system_context.Mag_Z = telemetry_message.Mag_Z;
-    xr4_system_context.Main_Bus_V = telemetry_message.Main_Bus_V;
-    xr4_system_context.Main_Bus_I = telemetry_message.Main_Bus_I;
-    xr4_system_context.temp = telemetry_message.temp;
-    xr4_system_context.OBC_RSSI = telemetry_message.OBC_RSSI;
 
+  memcpy(&CTU_in_TM_msg_type, incoming_telemetry_data, sizeof(uint8_t));
+
+  if(CTU_in_TM_msg_type == TM_GPS_DATA_MSG){
+    memcpy(&CTU_in_TM_GPS_data, incoming_telemetry_data, sizeof(telemetry_GPS_data_t));
+    CTU_TM_last_received_data_type = TM_GPS_DATA_MSG;
+  }
+  else if(CTU_in_TM_msg_type == TM_IMU_DATA_MSG){
+    memcpy(&CTU_in_TM_IMU_data, incoming_telemetry_data, sizeof(telemetry_IMU_data_t));
+    CTU_TM_last_received_data_type = TM_IMU_DATA_MSG;
+  }
+  else if(CTU_in_TM_msg_type == TM_HK_DATA_MSG){
+    memcpy(&CTU_in_TM_HK_data, incoming_telemetry_data, sizeof(telemetry_HK_data_t));
+    CTU_TM_last_received_data_type = TM_HK_DATA_MSG;
+  }
+  else {
+    logMessage(true, "OnTelemetryReceive", "Unknown Telemetry Message Type Received");
+  }
+
+  logMessage(true, "OnTelemetryReceive", "Telemetry received -----------------------");
+  logMessage(true, "OnTelemetryReceive", "Bytes received: %d", len);
+  logMessage(true, "OnTelemetryReceive", "------------------------------------------");
+
+  TM_received_rdy_to_copy = true;
 }
 #endif
 // --------------------------------------------------------
