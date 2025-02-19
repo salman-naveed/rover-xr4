@@ -2,7 +2,7 @@
 #define GPS_RX_PIN 16
 #define GPS_TX_PIN 17
 
-struct GPSData {
+typedef struct GPSData {
   bool isValidLocation;
   double latitude;
   double longitude;
@@ -15,10 +15,10 @@ struct GPSData {
   int minute;
   int second;
   int centisecond;
-};
+} GPSData_t;
 
-GPSData gps_data;
 
-void SN_GPS_Init();
+
+bool SN_GPS_Init();
 void SN_GPS_Handler();
-GPSData SN_GPS_extractData();
+void SN_GPS_extractData();

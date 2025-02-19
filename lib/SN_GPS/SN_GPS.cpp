@@ -4,6 +4,7 @@
 #include <SN_Logger.h>
 #include <SN_XR_Board_Types.h>
 #include <Ticker.h>
+#include <SN_Common.h>
 
 // Define the serial connection to the GPS device
 static const int RXPin = GPS_RX_PIN, TXPin = GPS_TX_PIN;
@@ -17,28 +18,37 @@ SoftwareSerial GPS_SoftSerial(RXPin, TXPin);
 
 Ticker gps_ticker;
 
+GPSData_t gps_data;
+
+extern xr4_system_context_t xr4_system_context; 
 
 
-void SN_GPS_Init() {
+
+bool SN_GPS_Init() {
     GPS_SoftSerial.begin(GPS_Baud_Rate);
+
+    if (millis() > 5000 && gps.charsProcessed() < 10)
+    {
+      logMessage(true, "SN_GPS_Init", "No GPS detected: check wiring.");
+      return false;
+    }
+
+    logMessage(true, "SN_GPS_Init", "GPS Initialized");
+    return true;
 }
 
 
 void SN_GPS_Handler() {
     // This sketch displays information every time a new sentence is correctly encoded.
-    while (GPS_SoftSerial.available() > 0)
-        if (gps.encode(GPS_SoftSerial.read()))
-            displayInfo();
-
-    if (millis() > 5000 && gps.charsProcessed() < 10)
-    {
-        logMessage(true, "SN_GPS_Init", "No GPS detected: check wiring.");
-        while(true);
+    while (GPS_SoftSerial.available() > 0){
+        if (gps.encode(GPS_SoftSerial.read())){
+          SN_GPS_extractData();
+        }
     }
 }
 
 
-GPSData SN_GPS_extractData() {
+void SN_GPS_extractData() {
   // Extract location (latitude and longitude)
   if (gps.location.isValid()) {
     gps_data.isValidLocation = true;
@@ -68,7 +78,5 @@ GPSData SN_GPS_extractData() {
   } else {
     gps_data.isValidTime = false;
   }
-
-  return gps_data;
 }
 
