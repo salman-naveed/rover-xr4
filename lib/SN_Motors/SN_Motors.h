@@ -1,32 +1,37 @@
 
 
-// Pin Definitions
+// ------ Pin Definitions --------
 
-// #define GPIO_PWM0A_OUT 15   //Set GPIO 15 as PWM0A
-// #define GPIO_PWM0B_OUT 16   //Set GPIO 16 as PWM0B
+// Motor 1 - Left Front
+#define M1_LF_PWM0A_OUT 32   //Set GPIO 32 as PWM0A
+#define M1_LF_PWM0B_OUT 33   //Set GPIO 33 as PWM0B
 
-#define MOTOR_A_IN1 32
-#define MOTOR_A_IN2 33
+// Motor 2 - Left Rear
+#define M2_LR_PWM1A_OUT 25   //Set GPIO 25 as PWM1A
+#define M2_LR_PWM1B_OUT 26   //Set GPIO 26 as PWM1B
 
-#define MOTOR_B_IN1 25
-#define MOTOR_B_IN2 26
+// Motor 3 - Right Front
+#define M3_RF_PWM0A_OUT 27   //Set GPIO 27 as PWM0A
+#define M3_RF_PWM0B_OUT 14   //Set GPIO 14 as PWM0B
 
-#define MOTOR_C_IN1 27
-#define MOTOR_C_IN2 14
+// Motor 4 - Right Rear
+#define M4_RR_PWM1A_OUT 12   //Set GPIO 12 as PWM1A
+#define M4_RR_PWM1B_OUT 13   //Set GPIO 13 as PWM1B
 
-#define MOTOR_D_IN1 12
-#define MOTOR_D_IN2 13
 
-#define MOTOR_A_EN 15
-#define MOTOR_B_EN 2
-#define MOTOR_C_EN 4
-#define MOTOR_D_EN 16
-
+// ------ Function Prototypes --------
+void SN_Motors__Init();
 
 static void SN_Motors__GPIO_Init(void);
 static void SN_Motors_MCPWM_Init(void);
 
-static void SN_Motors_Drive_Forward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num , float duty_cycle);
-static void SN_Motors_Drive_Backward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num , float duty_cycle);
-static void SN_Motors_Stop(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num);
+void SN_Motors_DriveForward(float speed);
+void SN_Motors_DriveBackward(float speed);
+void SN_Motors_Stop();
+void SN_Motors_TurnLeft(float speed);
+void SN_Motors_TurnRight(float speed);
+
+static void mcpwm_bdc_motor_forward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num , float duty_cycle);
+static void mcpwm_bdc_motor_backward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num , float duty_cycle);
+static void mcpwm_bdc_motor_stop(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num);
 
