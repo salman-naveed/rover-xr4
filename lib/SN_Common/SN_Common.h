@@ -3,9 +3,9 @@
 
 typedef struct xr4_system_context {
     // OBC-specific fields (Telemetry, OBC -> CTU)
-    float GPS_lat;
-    float GPS_lon;
-    float GPS_time;
+    double GPS_lat;
+    double GPS_lon;
+    double GPS_time;
     bool GPS_fix;
 
     float Gyro_X;
