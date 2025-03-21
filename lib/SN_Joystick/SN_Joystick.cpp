@@ -53,6 +53,22 @@ JoystickRawADCValues_t SN_Joystick_ReadRawADCValues() {
     return values;
 }
 
+CTU_InputStates_t SN_CTU_ReadInputStates(){
+    CTU_InputStates_t input_states;
+
+    input_states.Emergency_Stop = digitalRead(emergency_stop_pin);
+    input_states.Armed = digitalRead(armed_pin);
+    input_states.Headlights_On = digitalRead(headlights_on_pin);
+    input_states.Buzzer = digitalRead(buzzer_pin);
+    input_states.Button_A = digitalRead(button_a_pin);
+    input_states.Button_B = digitalRead(button_b_pin);
+    input_states.Button_C = digitalRead(button_c_pin);
+    input_states.Button_D = digitalRead(button_d_pin);
+
+    return input_states;
+}
+
+
 #endif
 #endif
 

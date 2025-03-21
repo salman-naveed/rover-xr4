@@ -70,15 +70,25 @@ void SN_CTU_MainHandler(){
   // CTU Handler
   SN_Telemetry_updateContext(CTU_TM_last_received_data_type);
 
+  SN_CTU_ControlInputsHandler();
+
+  SN_Telecommand_updateStruct(xr4_system_context);
+
   
 
   SN_ESPNOW_SendTelecommand(TC_C2_DATA_MSG);
 
 }
 
-void SN_CTU_JoystickHandler(){
+void SN_CTU_ControlInputsHandler(){
 
   JoystickRawADCValues_t CTU_joystick_raw_adc_values = SN_Joystick_ReadRawADCValues();
+
+  CTU_InputStates_t CTU_input_states = SN_CTU_ReadInputStates();
+
+  
+
+
 
 
 

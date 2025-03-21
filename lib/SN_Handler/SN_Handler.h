@@ -11,6 +11,8 @@ void SN_OBC_DrivingHandler();
 
 void SN_CTU_MainHandler();
 
+void SN_CTU_ControlInputsHandler();
+
 uint8_t SN_CTU_get_OBC_Communication_Mode();
 
 uint8_t SN_CTU_read_Joystick(int axis);

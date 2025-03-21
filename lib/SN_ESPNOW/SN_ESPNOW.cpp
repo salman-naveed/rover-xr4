@@ -80,7 +80,7 @@ void SN_ESPNOW_register_recv_cb(){
         esp_now_register_recv_cb(esp_now_recv_cb_t(OnTelecommandReceive));
         logMessage(true, "SN_ESPNOW_register_recv_cb", "Recv CB registered: OnTelecommandReceive");
     #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
-        // esp_now_register_recv_cb(esp_now_recv_cb_t(OnTelemetryReceive));
+        esp_now_register_recv_cb(esp_now_recv_cb_t(OnTelemetryReceive));
         logMessage(true, "SN_ESPNOW_register_recv_cb", "Recv CB registered: OnTelemetryReceive");
     #endif
 }
@@ -284,6 +284,11 @@ void SN_Telemetry_updateContext(uint8_t CTU_TM_last_received_data_type){
 // Callback when data is received
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 void OnTelecommandReceive(const uint8_t * mac, const uint8_t *incoming_telecommand_data, int len) {
+
+  wifi_pkt_rx_ctrl_t *rx_ctrl = (wifi_pkt_rx_ctrl_t *)incoming_telecommand_data;
+  int data_len = len - rx_ctrl->sig_len;
+  xr4_system_context.CTU_RSSI = rx_ctrl->rssi;
+  
   uint8_t OBC_in_TM_msg_type;
 
   memcpy(&OBC_in_TM_msg_type, incoming_telecommand_data, sizeof(uint8_t));
@@ -311,6 +316,10 @@ void OnTelecommandReceive(const uint8_t * mac, const uint8_t *incoming_telecomma
 #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
 // Callback when a Telemetry data message is received by CTU
 void OnTelemetryReceive(const uint8_t * mac, const uint8_t *incoming_telemetry_data, int len) {
+
+  wifi_pkt_rx_ctrl_t *rx_ctrl = (wifi_pkt_rx_ctrl_t *)incoming_telemetry_data;
+  int data_len = len - rx_ctrl->sig_len;
+  xr4_system_context.CTU_RSSI = rx_ctrl->rssi;
 
   uint8_t CTU_in_TM_msg_type;
 
