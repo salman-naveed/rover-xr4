@@ -5,6 +5,7 @@
 #include <SN_Logger.h>
 // #include <SN_Common.h>
 #include <SN_Handler.h>
+#include <SN_WiFi.h>
 
 extern xr4_system_context_t xr4_system_context;
 
@@ -50,42 +51,86 @@ String success;
 void OnTelemetrySend(const uint8_t *mac_addr, esp_now_send_status_t status);
 void OnTelecommandSend(const uint8_t *mac_addr, esp_now_send_status_t status);
 
+bool espnow_init_success = false;
+
 // ----------------- Initialization Functions -----------------
-void SN_ESPNOW_Init(){
+void SN_ESPNOW_Init()
+{
+  SN_WiFi_StartAsWiFiClient();  // Set device as a Wi-Fi Station
   // Init ESP-NOW
   if (esp_now_init() != ESP_OK) {
     logMessage(true, "SN_ESPNOW_Init", "Error initializing ESP-NOW");
     return;
   }
-    logMessage(true, "SN_ESPNOW_Init", "ESP-NOW initialized");
-
+  else 
+  {
+    if(SN_ESPNOW_register_send_cb())        // Once ESPNOW is successfully initiated, we will register the Send CB function to get the status of trasnmitted packet
+    {
+      if(SN_ESPNOW_add_peer())              // Register and add peer
+      {
+        if(SN_ESPNOW_register_recv_cb())    // Register for a callback function that will be called when data is received
+        {
+          espnow_init_success = true;
+          logMessage(true, "SN_ESPNOW_Init", "ESP-NOW initialized");
+        }
+      }
+    }
+    else if(!espnow_init_success)
+    {
+      logMessage(true, "SN_ESPNOW_Init", "ESP-NOW init failed");
+    }
+    
+  }
   delay(100);
 }
 
-void SN_ESPNOW_register_send_cb(){
+bool SN_ESPNOW_register_send_cb(){
   // Once ESPNow is successfully Init, we will register for Send CB to
   // get the status of Trasnmitted packet
     #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32  
-        esp_now_register_send_cb(esp_now_send_cb_t(OnTelemetrySend));
-        logMessage(true, "SN_ESPNOW_register_send_cb", "Send CB registered: OnTelemetrySend");
+        if(esp_now_register_send_cb(esp_now_send_cb_t(OnTelemetrySend)) != ESP_OK)
+        {
+          logMessage(true, "SN_ESPNOW_register_send_cb", "Send CB registered: OnTelemetrySend");
+          return true;
+        }
+        else
+          return false;
+        
     #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
-        esp_now_register_send_cb(esp_now_send_cb_t(OnTelecommandSend));
-        logMessage(true, "SN_ESPNOW_register_send_cb", "Send CB registered: OnTelecommandSend");
+        if(esp_now_register_send_cb(esp_now_send_cb_t(OnTelecommandSend)) != ESP_OK)
+        {
+          logMessage(true, "SN_ESPNOW_register_send_cb", "Send CB registered: OnTelecommandSend");
+          return true;
+        }
+        else 
+          return false;
     #endif
 }
 
-void SN_ESPNOW_register_recv_cb(){
+bool SN_ESPNOW_register_recv_cb(){
   // Register for a callback function that will be called when data is received
     #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
-        esp_now_register_recv_cb(esp_now_recv_cb_t(OnTelecommandReceive));
-        logMessage(true, "SN_ESPNOW_register_recv_cb", "Recv CB registered: OnTelecommandReceive");
+        if(esp_now_register_recv_cb(esp_now_recv_cb_t(OnTelecommandReceive)) != ESP_OK)
+        {
+          logMessage(true, "SN_ESPNOW_register_recv_cb", "Recv CB registered: OnTelecommandReceive");
+          return true;
+        }
+        else 
+          return false;
+        
     #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
-        esp_now_register_recv_cb(esp_now_recv_cb_t(OnTelemetryReceive));
-        logMessage(true, "SN_ESPNOW_register_recv_cb", "Recv CB registered: OnTelemetryReceive");
+        if(esp_now_register_recv_cb(esp_now_recv_cb_t(OnTelemetryReceive)) != ESP_OK)
+        {
+          logMessage(true, "SN_ESPNOW_register_recv_cb", "Recv CB registered: OnTelemetryReceive");
+          return true;
+        }
+        else  
+          return false;
+        
     #endif
 }
 
-void SN_ESPNOW_add_peer(){
+bool SN_ESPNOW_add_peer(){
   // Register peer
   memcpy(peerInfo.peer_addr, broadcastAddress, 6);
   peerInfo.channel = 0;  
@@ -94,9 +139,10 @@ void SN_ESPNOW_add_peer(){
   // Add peer        
   if (esp_now_add_peer(&peerInfo) != ESP_OK){
     Serial.println("Failed to add peer");
-    return;
+    return false;
   }
     logMessage(true, "SN_ESPNOW_add_peer", "Peer added");
+    return true;
 }
 // --------------------------------------------------------
 
@@ -151,7 +197,7 @@ void SN_ESPNOW_SendTelecommand(uint8_t TC_out_msg_type){
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 void OnTelemetrySend(const uint8_t *mac_addr, esp_now_send_status_t status) {
   logMessage(true, "OnTelemetrySend", "Telemetry Send Status: %s", status == ESP_NOW_SEND_SUCCESS ? "TM Delivery Success" : "TM Delivery Fail");  
-  if (status ==0){
+  if (status == 0){
     success = "Delivery Success";
   }
   else{
@@ -161,7 +207,7 @@ void OnTelemetrySend(const uint8_t *mac_addr, esp_now_send_status_t status) {
 #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
 void OnTelecommandSend(const uint8_t *mac_addr, esp_now_send_status_t status) {
   logMessage(true, "OnTelecommandSend", "Telecommand Send Status: %s", status == ESP_NOW_SEND_SUCCESS ? "TC Delivery Success" : "TC Delivery Fail");
-  if (status ==0){
+  if (status == 0){
     success = "Delivery Success";
   }
   else{

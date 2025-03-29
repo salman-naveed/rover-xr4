@@ -70,13 +70,11 @@ typedef struct telecommand_data {
 
 void SN_ESPNOW_Init();
 
-void SN_ESPNOW_register_send_cb();
+bool SN_ESPNOW_register_send_cb();
 
-void SN_ESPNOW_register_send_cb();
+bool SN_ESPNOW_register_recv_cb();
 
-void SN_ESPNOW_register_recv_cb();
-
-void SN_ESPNOW_add_peer();
+bool SN_ESPNOW_add_peer();
 
 void SN_ESPNOW_SendTelemetry();
 
