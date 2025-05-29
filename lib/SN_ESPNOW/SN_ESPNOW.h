@@ -50,7 +50,7 @@ typedef struct telemetry_HK_data {
 
 // Create a struct_message to hold telecommand data (CTU --> OBC)
 // instances used by:
-//  * OBC (when received TC from CTU)
+//  * OBC (when receiving TC from CTU)
 //  * CTU (when sending TC to OBC)
 typedef struct telecommand_data {
     uint8_t msg_type = TC_C2_DATA_MSG;

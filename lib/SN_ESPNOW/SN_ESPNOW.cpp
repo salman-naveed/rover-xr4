@@ -28,6 +28,28 @@ esp_now_peer_info_t peerInfo;
   // OBC struct_message to hold incoming telecommand data (CTU --> OBC)
   telecommand_data_t OBC_in_telecommand_data;
 
+  #define NUM_TM_MSG_TYPES 3
+
+  static const telemetry_message_type_id_t telemetry_msg_types[NUM_TM_MSG_TYPES] = {
+    TM_GPS_DATA_MSG,
+    TM_IMU_DATA_MSG,
+    TM_HK_DATA_MSG
+  };
+
+  // Configuration: Intervals in milliseconds for each message type
+  static const uint32_t telemetry_intervals_ms[NUM_TM_MSG_TYPES] = {
+    100, // TM_GPS_DATA_MSG interval
+    100,  // TM_IMU_DATA_MSG interval
+    200  // TM_HK_DATA_MSG interval
+  };
+
+  // Last sent timestamps for each message type (in microseconds)
+  static uint64_t last_sent_time_us[NUM_TM_MSG_TYPES] = {0};
+
+  // Static index for rotating through message types
+  static uint8_t current_tm_index = 0;
+
+
 #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
   // REPLACE WITH THE MAC OF THE ON-BOARD COMPUTER UNIT (OBC)
   uint8_t broadcastAddress[] = {0x24, 0x0a, 0xc4, 0xbf, 0x9a, 0xe0}; // MAC Address of the receiver (SN_XR4_OBC_ESP32 - On-Board Computer Unit on the XR4 Rover)
@@ -148,29 +170,45 @@ bool SN_ESPNOW_add_peer(){
 
 // ----------------- Data Send Functions -----------------
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
-void SN_ESPNOW_SendTelemetry(uint8_t TM_out_msg_type){
-    // Send message via ESP-NOW
-    SN_Telemetry_updateStruct(xr4_system_context);
 
-    esp_err_t result;
+void SN_ESPNOW_SendTelemetry(void) {
+    telemetry_msg_type_t msg_type = telemetry_msg_types[current_tm_index];
 
-    if(TM_out_msg_type == TM_GPS_DATA_MSG){
-      result = esp_now_send(broadcastAddress, (uint8_t *) &OBC_out_TM_GPS_data, sizeof(telemetry_GPS_data_t));
-    }
-    else if(TM_out_msg_type == TM_IMU_DATA_MSG){
-      result = esp_now_send(broadcastAddress, (uint8_t *) &OBC_out_TM_IMU_data, sizeof(telemetry_IMU_data_t));
-    }
-    else if(TM_out_msg_type == TM_HK_DATA_MSG){
-      result = esp_now_send(broadcastAddress, (uint8_t *) &OBC_out_TM_HK_data, sizeof(telemetry_HK_data_t));
-    }
+  // Calculate elapsed time since last send
+  uint64_t now_us = esp_timer_get_time(); // Get current time in microseconds
+  uint32_t elapsed_ms = (now_us - last_sent_time_us[msg_type]) / 1000;
 
-    if (result == ESP_OK) {
-        logMessage(true, "SN_ESPNOW_SendTelemetry", "Sent with success");
-    }
-    else {
-        logMessage(true, "SN_ESPNOW_SendTelemetry", "Error sending the data");
-    }
+  if (elapsed_ms >= telemetry_intervals_ms[msg_type]) {
+      SN_Telemetry_updateStruct(xr4_system_context);
+      esp_err_t result;
+
+      switch (msg_type) {
+          case TM_GPS_DATA_MSG:
+              result = esp_now_send(broadcastAddress, (uint8_t *)&OBC_out_TM_GPS_data, sizeof(telemetry_GPS_data_t));
+              break;
+          case TM_IMU_DATA_MSG:
+              result = esp_now_send(broadcastAddress, (uint8_t *)&OBC_out_TM_IMU_data, sizeof(telemetry_IMU_data_t));
+              break;
+          case TM_HK_DATA_MSG:
+              result = esp_now_send(broadcastAddress, (uint8_t *)&OBC_out_TM_HK_data, sizeof(telemetry_HK_data_t));
+              break;
+          default:
+              result = ESP_FAIL;
+              break;
+      }
+
+      if (result == ESP_OK) {
+          logMessage(true, "SN_ESPNOW_SendTelemetry", "Sent message type %d successfully", msg_type);
+          last_sent_time_us[msg_type] = now_us; // Update last sent time
+      } else {
+          logMessage(true, "SN_ESPNOW_SendTelemetry", "Failed to send message type %d", msg_type);
+      }
+  }
+
+  // Cycle to next message type
+  current_tm_index = NUM_TM_MSG_TYPES;        //(current_tm_index + 1) % (sizeof(telemetry_msg_types) / sizeof(telemetry_msg_type_t));
 }
+
 #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
 void SN_ESPNOW_SendTelecommand(uint8_t TC_out_msg_type){
     // Send message via ESP-NOW
@@ -340,6 +378,7 @@ void OnTelecommandReceive(const uint8_t * mac, const uint8_t *incoming_telecomma
   memcpy(&OBC_in_TM_msg_type, incoming_telecommand_data, sizeof(uint8_t));
 
   if(OBC_in_TM_msg_type == TC_C2_DATA_MSG){
+    logMessage(true, "OnTelecommandReceive", "Telecommand C2 Data Message Received");
     memcpy(&OBC_in_telecommand_data, incoming_telecommand_data, sizeof(telecommand_data_t));
     OBC_TC_last_received_data_type = TC_C2_DATA_MSG;
   }
@@ -347,14 +386,14 @@ void OnTelecommandReceive(const uint8_t * mac, const uint8_t *incoming_telecomma
     logMessage(true, "OnTelecommandReceive", "Unknown Telecommand Message Type Received");
   }
 
-  logMessage(true, "OnTelecommandReceive", "Telecommand received -----------------------");
-  logMessage(true, "OnTelecommandReceive", "Bytes received: %d", len);
-  logMessage(true, "OnTelecommandReceive", "Command: %d", OBC_in_telecommand_data.Command);
-  logMessage(true, "OnTelecommandReceive", "Joystick_X: %d", OBC_in_telecommand_data.Joystick_X);
-  logMessage(true, "OnTelecommandReceive", "Joystick_Y: %d", OBC_in_telecommand_data.Joystick_Y);
-  logMessage(true, "OnTelecommandReceive", "Encoder_Pos: %d", OBC_in_telecommand_data.Encoder_Pos);
-  logMessage(true, "OnTelecommandReceive", "Flags: %d", OBC_in_telecommand_data.flags);
-  logMessage(true, "OnTelecommandReceive", "------------------------------------------");
+  // logMessage(true, "OnTelecommandReceive", "Telecommand received -----------------------");
+  // logMessage(true, "OnTelecommandReceive", "Bytes received: %d", len);
+  // logMessage(true, "OnTelecommandReceive", "Command: %d", OBC_in_telecommand_data.Command);
+  // logMessage(true, "OnTelecommandReceive", "Joystick_X: %d", OBC_in_telecommand_data.Joystick_X);
+  // logMessage(true, "OnTelecommandReceive", "Joystick_Y: %d", OBC_in_telecommand_data.Joystick_Y);
+  // logMessage(true, "OnTelecommandReceive", "Encoder_Pos: %d", OBC_in_telecommand_data.Encoder_Pos);
+  // logMessage(true, "OnTelecommandReceive", "Flags: %d", OBC_in_telecommand_data.flags);
+  // logMessage(true, "OnTelecommandReceive", "------------------------------------------");
 
   OBC_TC_received_data_ready = true;
 }
@@ -372,16 +411,19 @@ void OnTelemetryReceive(const uint8_t * mac, const uint8_t *incoming_telemetry_d
   memcpy(&CTU_in_TM_msg_type, incoming_telemetry_data, sizeof(uint8_t));
 
   if(CTU_in_TM_msg_type == TM_GPS_DATA_MSG){
+    logMessage(true, "OnTelemetryReceive", "Telemetry GPS Data Message Received");
     memcpy(&CTU_in_TM_GPS_data, incoming_telemetry_data, sizeof(telemetry_GPS_data_t));
     CTU_TM_last_received_data_type = TM_GPS_DATA_MSG;
     CTU_TM_received_data_ready = true;
   }
   else if(CTU_in_TM_msg_type == TM_IMU_DATA_MSG){
+    logMessage(true, "OnTelemetryReceive", "Telemetry IMU Data Message Received");
     memcpy(&CTU_in_TM_IMU_data, incoming_telemetry_data, sizeof(telemetry_IMU_data_t));
     CTU_TM_last_received_data_type = TM_IMU_DATA_MSG;
     CTU_TM_received_data_ready = true;
   }
   else if(CTU_in_TM_msg_type == TM_HK_DATA_MSG){
+    logMessage(true, "OnTelemetryReceive", "Telemetry HK Data Message Received");
     memcpy(&CTU_in_TM_HK_data, incoming_telemetry_data, sizeof(telemetry_HK_data_t));
     CTU_TM_last_received_data_type = TM_HK_DATA_MSG;
     CTU_TM_received_data_ready = true;
@@ -390,10 +432,7 @@ void OnTelemetryReceive(const uint8_t * mac, const uint8_t *incoming_telemetry_d
     logMessage(true, "OnTelemetryReceive", "Unknown Telemetry Message Type Received");
     return;
   }
-
-  logMessage(true, "OnTelemetryReceive", "Telemetry received -----------------------");
   logMessage(true, "OnTelemetryReceive", "Bytes received: %d", len);
-  logMessage(true, "OnTelemetryReceive", "------------------------------------------");
   
 }
 #endif
