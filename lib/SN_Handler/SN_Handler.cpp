@@ -150,55 +150,39 @@ void SN_OBC_ExecuteCommands() {
 }
 
 void SN_OBC_DrivingHandler() {
+  if(EMERGENCY_STOP_ACTIVE || !ARMED) {
+    // Stop the motors if emergency stop is active
+    SN_Motors_Drive(0, 0);
+    return;
+  }
+  else if(ARMED) {
+    // Map joystick values to motor speeds
+    // Joystick values are in the range of 0-1023, map them to -100 to 100
+    JoystickMappedValues_t joystick_values;
 
-  JoystickMappedValues_t joystick_values;
+    joystick_values = SN_Joystick_OBC_MapADCValues(xr4_system_context.Joystick_X, xr4_system_context.Joystick_Y);
 
-  joystick_values = SN_Joystick_OBC_MapADCValues(xr4_system_context.Joystick_X, xr4_system_context.Joystick_Y);
-
-  // if(joystick_values.joystick_x_mapped_val > 0) {
-  //   if(joystick_values.joystick_y_mapped_val == 0){
-  //     // Drive Forward
-  //     float speed = (float)joystick_values.joystick_x_mapped_val;
-  //     SN_Motors_DriveForward(speed);
-  //   }
-  //   else if(joystick_values.joystick_y_mapped_val > 0){
-  //     // Turn Right
-  //     float speed = (float)joystick_values.joystick_y_mapped_val;
-  //     SN_Motors_TurnRight(speed);
-  //   }
-  //   else if(joystick_values.joystick_y_mapped_val < 0){
-  //     // Turn Left
-  //     float speed = (float)joystick_values.joystick_y_mapped_val;
-  //     SN_Motors_TurnLeft(speed);
-  //   }
-
-  //   // Drive Forward
-  //   SN_Motors_DriveForward(speed);
-  // } 
-  // else if(joystick_values.joystick_x_mapped_val < 0) {
-  //   // Drive Backward
-  //   float speed = (float)joystick_values.joystick_x_mapped_val;
-  //   SN_Motors_DriveBackward(speed);
-  // } 
-  // else {
-  //   // Stop
-  //   SN_Motors_Stop(MCPWM_UNIT_0, MCPWM_TIMER_0);
-  // }
-
+    SN_Motors_Drive(joystick_values.joystick_x_mapped_val, joystick_values.joystick_y_mapped_val);
+    return;
+  }
 }
 
-
+// OBC Handler
 void SN_OBC_MainHandler(){
-  // OBC Handler
 
-  SN_Telecommand_updateContext(OBC_in_telecommand_data);
+  // Update OBC context with received telecommand data, which is received from CTU and assigned to OBC_in_telecommand_data using OnTelecommandReceive() callback
+  SN_Telecommand_updateContext(OBC_in_telecommand_data); 
 
+  // Execute telecommands received from CTU
   SN_OBC_ExecuteCommands();
 
+  // Execute driving commands received from CTU
   SN_OBC_DrivingHandler();
 
+  // Update outgoing telemetry data struct using the updated context
   SN_Telemetry_updateStruct(xr4_system_context);
 
+  // Send telemetry data to CTU via ESP-NOW
   SN_ESPNOW_SendTelemetry();
 }
 
