@@ -1,0 +1,13 @@
+#if SN_WEBSERVER_IS_ENABLED == 1
+#ifndef SN_WEBSERVER_H
+#define SN_WEBSERVER_H
+
+
+#define MAX_JSON_MESSAGE_SIZE 1450
+
+
+
+
+
+#endif //SN_WEBSERVER_H
+#endif // SN_WEBSERVER_IS_ENABLED
