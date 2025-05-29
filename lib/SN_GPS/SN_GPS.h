@@ -22,3 +22,5 @@ typedef struct GPSData {
 bool SN_GPS_Init();
 void SN_GPS_Handler();
 void SN_GPS_extractData();
+
+void checkGPSHealth();

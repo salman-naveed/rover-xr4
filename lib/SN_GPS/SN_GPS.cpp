@@ -10,6 +10,8 @@
 static const int RXPin = GPS_RX_PIN, TXPin = GPS_TX_PIN;
 static const uint32_t GPS_Baud_Rate = 4800;
 
+
+
 // The TinyGPSPlus object
 TinyGPSPlus gps;
 
@@ -18,65 +20,93 @@ SoftwareSerial GPS_SoftSerial(RXPin, TXPin);
 
 Ticker gps_ticker;
 
-GPSData_t gps_data;
+Ticker gps_healthcheck_ticker;
 
-extern xr4_system_context_t xr4_system_context; 
+extern xr4_system_context_t xr4_system_context;
 
+#define GPS_DEBUG 1
+#if GPS_DEBUG
+  #define GPS_LOG(...) logMessage(true, __VA_ARGS__)
+#else
+  #define GPS_LOG(...)
+#endif
 
+unsigned long lastGPSFixTime = 0;
+const unsigned long gpsTimeout = 10000; // 10 seconds
 
 bool SN_GPS_Init() {
     GPS_SoftSerial.begin(GPS_Baud_Rate);
 
-    if (millis() > 5000 && gps.charsProcessed() < 10)
-    {
-      logMessage(true, "SN_GPS_Init", "No GPS detected: check wiring.");
-      return false;
+    delay(1000); // Give the module time to respond
+
+    gps_ticker.attach_ms(500, SN_GPS_Handler); // call GPS handler every 500ms
+    gps_healthcheck_ticker.attach_ms(1000, checkGPSHealth); // check GPS health every second
+
+    if (millis() > 5000 && gps.charsProcessed() < 10) {
+        GPS_LOG("SN_GPS_Init", "No GPS detected: check wiring.");
+        return false;
     }
 
-    logMessage(true, "SN_GPS_Init", "GPS Initialized");
+    GPS_LOG("SN_GPS_Init", "GPS Initialized");
     return true;
 }
 
-
 void SN_GPS_Handler() {
-    // This sketch displays information every time a new sentence is correctly encoded.
-    while (GPS_SoftSerial.available() > 0){
-        if (gps.encode(GPS_SoftSerial.read())){
-          SN_GPS_extractData();
-        }
+    int maxBytesToProcess = 32;
+    int bytesProcessed = 0;
+
+    while (GPS_SoftSerial.available() > 0 && bytesProcessed < maxBytesToProcess) {
+        char c = GPS_SoftSerial.read();
+        gps.encode(c);
+        bytesProcessed++;
+    }
+
+    if (gps.location.isUpdated() || gps.time.isUpdated() || gps.date.isUpdated()) {
+        SN_GPS_extractData();
     }
 }
 
-
 void SN_GPS_extractData() {
-  // Extract location (latitude and longitude)
   if (gps.location.isValid()) {
-    gps_data.isValidLocation = true;
-    gps_data.latitude = gps.location.lat();
-    gps_data.longitude = gps.location.lng();
+      xr4_system_context.GPS_lat = gps.location.lat();
+      xr4_system_context.GPS_lon = gps.location.lng();
   } else {
-    gps_data.isValidLocation = false;
+      GPS_LOG("SN_GPS_extractData", "Invalid location");
   }
 
-  // Extract date (day, month, year)
   if (gps.date.isValid()) {
-    gps_data.isValidDate = true;
-    gps_data.day = gps.date.day();
-    gps_data.month = gps.date.month();
-    gps_data.year = gps.date.year();
+      // date fields could be stored separately if needed
   } else {
-    gps_data.isValidDate = false;
+      GPS_LOG("SN_GPS_extractData", "Invalid date");
   }
 
-  // Extract time (hour, minute, second, centisecond)
   if (gps.time.isValid()) {
-    gps_data.isValidTime = true;
-    gps_data.hour = gps.time.hour();
-    gps_data.minute = gps.time.minute();
-    gps_data.second = gps.time.second();
-    gps_data.centisecond = gps.time.centisecond();
+      xr4_system_context.GPS_time = gps.time.hour() * 3600 +
+                                    gps.time.minute() * 60 +
+                                    gps.time.second() +
+                                    gps.time.centisecond() / 100.0;
   } else {
-    gps_data.isValidTime = false;
+      GPS_LOG("SN_GPS_extractData", "Invalid time");
   }
+
+  bool fix = gps.location.isValid() && gps.date.isValid() && gps.time.isValid();
+  xr4_system_context.GPS_fix = fix;
+
+  if (fix) {
+      lastGPSFixTime = millis();
+  }
+
+  GPS_LOG("SN_GPS_extractData", "Lat: %f, Lon: %f, Time: %f, Fix: %d",
+           xr4_system_context.GPS_lat,
+           xr4_system_context.GPS_lon,
+           xr4_system_context.GPS_time,
+           xr4_system_context.GPS_fix);
+}
+
+void checkGPSHealth() {
+    if (millis() - lastGPSFixTime > gpsTimeout) {
+        GPS_LOG("GPS Watchdog", "GPS signal lost or timed out");
+        xr4_system_context.GPS_fix = false;
+    }
 }
 
