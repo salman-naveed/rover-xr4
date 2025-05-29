@@ -4,14 +4,13 @@
 
 #if SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
 
+void SN_Input_Init();
 void SN_Joystick_Init();
 
 typedef struct JoystickRawADCValues {
     uint16_t joystick_x_raw_val = 0;
     uint16_t joystick_y_raw_val = 0;
 } JoystickRawADCValues_t;
-
-JoystickRawADCValues_t SN_Joystick_ReadRawADCValues();
 
 typedef struct CTU_InputStates {
     bool Emergency_Stop: 1 {false};
@@ -24,11 +23,10 @@ typedef struct CTU_InputStates {
     bool Button_D : 1 {false};
 } CTU_InputStates_t;
 
+JoystickRawADCValues_t SN_Joystick_ReadRawADCValues();
 CTU_InputStates_t SN_CTU_ReadInputStates();
 
-#endif
-
-#if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
+#elif SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 
 typedef struct JoystickMappedValues {
     int16_t joystick_x_mapped_val = 0;
