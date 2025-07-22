@@ -14,6 +14,8 @@
 #define LCD_COLUMNS 20
 #define LCD_BACKLIGHT 255
 
+extern bool espnow_init_success; // Flag to check if ESP-NOW is initialized
+
 byte lcd_startup_char[8] =  { 
   B00000,
   B00100,
@@ -45,6 +47,18 @@ void SN_LCD_Init(){
         
         SN_LCD_PrintAt(5, 0, "ROVER XR-4");
         SN_LCD_PrintAt(0, 2, "Connecting...");
+
+        delay(1000); // Wait for a second before showing the next message
+
+        SN_LCD_Clear();
+
+        if(espnow_init_success) {
+            SN_LCD_PrintAt(0, 2, "ESP-NOW Connected");
+            SN_LCD_PrintAt(0, 3, "Ready to go!");
+        } else {
+            SN_LCD_PrintAt(0, 2, "ESP-NOW Not Ready");
+            SN_LCD_PrintAt(0, 3, "Retrying... ");
+        }
 
         lcd.createChar(1, lcd_startup_char);
     
