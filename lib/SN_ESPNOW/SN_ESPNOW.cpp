@@ -172,7 +172,7 @@ bool SN_ESPNOW_add_peer(){
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 
 void SN_ESPNOW_SendTelemetry(void) {
-    telemetry_msg_type_t msg_type = telemetry_msg_types[current_tm_index];
+  telemetry_message_type_id_t msg_type = telemetry_msg_types[current_tm_index];
 
   // Calculate elapsed time since last send
   uint64_t now_us = esp_timer_get_time(); // Get current time in microseconds
