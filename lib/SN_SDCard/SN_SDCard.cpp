@@ -1,3 +1,5 @@
+#if defined(SN_USE_SD_CARD)
+
 #include <SN_SDCard.h>
 #include <SN_Logger.h>
 #include <SN_GPS.h>
@@ -101,3 +103,5 @@ void appendFile(fs::FS &fs, const char * path, const char * message) {
   }
   file.close();
 }
+
+#endif // SN_USE_SD_CARD
