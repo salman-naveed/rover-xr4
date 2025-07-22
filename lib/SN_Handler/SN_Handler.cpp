@@ -74,8 +74,6 @@ void SN_CTU_MainHandler(){
 
   SN_Telecommand_updateStruct(xr4_system_context);
 
-  
-
   SN_ESPNOW_SendTelecommand(TC_C2_DATA_MSG);
 
 }
@@ -86,12 +84,20 @@ void SN_CTU_ControlInputsHandler(){
 
   CTU_InputStates_t CTU_input_states = SN_CTU_ReadInputStates();
 
-  
+  // Update the XR4 system context with the joystick values
+  xr4_system_context.Joystick_X = CTU_joystick_raw_adc_values.joystick_x_raw_val;
+  xr4_system_context.Joystick_Y = CTU_joystick_raw_adc_values.joystick_y_raw_val;
 
-
-
-
-
+  // Update the XR4 system context with the control inputs
+  xr4_system_context.Emergency_Stop = CTU_input_states.Emergency_Stop;
+  xr4_system_context.Armed = CTU_input_states.Armed;
+  xr4_system_context.Headlights_On = CTU_input_states.Headlights_On;
+  xr4_system_context.Buzzer = CTU_input_states.Buzzer;
+  xr4_system_context.Button_A = CTU_input_states.Button_A;
+  xr4_system_context.Button_B = CTU_input_states.Button_B;
+  xr4_system_context.Button_C = CTU_input_states.Button_C;
+  xr4_system_context.Button_D = CTU_input_states.Button_D;
+  xr4_system_context.CTU_RSSI = SN_ESPNOW_GetRSSI();
 }
 
 uint8_t SN_CTU_get_OBC_Communication_Mode() {
