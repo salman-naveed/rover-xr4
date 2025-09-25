@@ -10,9 +10,8 @@
 #ifdef SN_JOYSTICK_H
 
 // Joystick Control
-#define joystick_x_pin A0 // Joystick X-axis input pin GPIO36 SVP
-#define joystick_y_pin A3 // Joystick Y-axis input pin GPIO39 SVN
-
+#define joystick_x_pin A3 // Joystick X-axis input pin GPIO39 (SVN A3) LEFT/RIGHT Horizontal
+#define joystick_y_pin A0 // Joystick Y-axis input pin GPIO36 (SVP A0) FWD/REVERSE Vertical
 
 // CTU Input Switches
 #define emergency_stop_pin 34 // Emergency Stop Switch input pin GPIO34
