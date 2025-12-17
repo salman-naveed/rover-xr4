@@ -5,17 +5,15 @@
 
 
 #define ONE_WIRE_BUS_PIN 4 // GPIO where the DS18B20 is connected to
+#define MIN_BATTERY_TEMPERATURE 0.0
+#define MAX_BATTERY_TEMPERATURE 50.0
 
 #define ADC_MAX_VOLTAGE 3.31
-
 #define MIN_MAIN_BUS_CURRENT 0.0
 #define MAX_MAIN_BUS_CURRENT 5.0
-
 #define MIN_MAIN_BUS_VOLTAGE 10.0
 #define MAX_MAIN_BUS_VOLTAGE 12.6
 
-#define MIN_BATTERY_TEMPERATURE 0.0
-#define MAX_BATTERY_TEMPERATURE 50.0
 
 #include <OneWire.h>
 #include <DallasTemperature.h>
@@ -26,17 +24,20 @@
 
 Preferences preferences;
 
+// Initialize ADC (ADS1115)
 Adafruit_ADS1115 obc_adc;
+bool ADC_NotInitialized = true; // Flag to check if ADC is initialized
 
+#if SN_USE_TEMPERATURE_SENSOR == 1
 // Initialize DS18B20 temperature sensor
 const int oneWireBus = ONE_WIRE_BUS_PIN ;     // GPIO where the DS18B20 is connected to
 OneWire oneWire(oneWireBus);    // Setup a oneWire instance to communicate with any OneWire devices
 DallasTemperature batt_temp_sensor(&oneWire);   // Pass our oneWire reference to Dallas Temperature sensor 
-
-bool ADC_NotInitialized = true; // Flag to check if ADC is initialized
 bool DS18B20_NotInitialized = true; // Flag to check if DS18B20 is initialized
+#endif // SN_USE_TEMPERATURE_SENSOR
 
-
+#if SN_USE_IMU == 1
+// Initialize MPU6050
 Adafruit_MPU6050 mpu;
 MPUFilter mpuFilter;
 
@@ -63,31 +64,70 @@ double axSum = 0.0, aySum = 0.0, azSum = 0.0;
 double gxSum = 0.0, gySum = 0.0, gzSum = 0.0;
 // End of MPU Calibration variables
 
-void SN_Sensors_ADCInit()
-{   
-    uint8_t adc_init_try = 0;
+#endif // SN_USE_IMU
 
+bool SN_Sensors_ADCInit()
+{   
     if (!obc_adc.begin()) {
         logMessage(false, "SN_Sensors_ADCInit()", "Failed to initialize ADC ADS1115.");
-        while (adc_init_try < 50)
-        {
-            delay(50);
-            adc_init_try++;
-        }
-        ADC_NotInitialized = true; // Set flag to true if ADC initialization fails
+        return true;
+    } else {
+        return false; // Set flag to false if ADC initialization succeeds
     }
-    ADC_NotInitialized = false; // Set flag to false if ADC initialization succeeds
-
-    // if(!batt_temp_sensor.begin()) {
-    //     logMessage(false, "SN_Sensors_ADCInit()", "Failed to initialize DS18B20 temperature sensor.");
-    //     while (adc_init_try < 50)
-    //     {
-    //         delay(50);
-    //         adc_init_try++;
-    //     }
-    //     DS18B20_NotInitialized = true; // Set flag to true if DS18B20 initialization fails
-    // }
 }
+
+#if SN_USE_TEMPERATURE_SENSOR == 1
+bool SN_Sensors_DS18B20Init() {
+
+    uint8_t ds18b20_address[8];
+    batt_temp_sensor.begin();
+    batt_temp_sensor.getAddress(ds18b20_address, 0); // Get address of the first sensor
+    if(!batt_temp_sensor.isConnected(ds18b20_address)){
+        logMessage(false, "SN_Sensors_DS18B20Init()", "Failed to initialize DS18B20 temperature sensor.");
+        return true;
+    } else {
+        return false;
+    }
+}
+#endif // SN_USE_TEMPERATURE_SENSOR
+
+void SN_Sensors_Init() {
+    if (SN_Sensors_ADCInit()) {
+        logMessage(true, "SN_Sensors_Init", "ADC Initialized Successfully");
+    } else {
+        logMessage(false, "SN_Sensors_Init", "ADC Initialization Failed");
+    }
+
+    // Initialize DS18B20 sensor
+    if(SN_Sensors_DS18B20Init()) {
+        logMessage(false, "SN_Sensors_Init", "DS18B20 Temperature Sensor Initialization Failed");
+    } else {
+        logMessage(true, "SN_Sensors_Init", "DS18B20 Temperature Sensor Initialized Successfully");
+    }
+
+    #if SN_USE_IMU == 1
+    SN_Sensors_MPU_Init();
+    #endif // SN_USE_IMU
+}
+
+#if SN_USE_IMU == 1
+void SN_Sensors_MPU_Init() {
+    if (!mpu.begin()) {
+        logMessage(false, "SN_Sensors_MPU_Init", "Failed to initialize MPU6050.");
+        return;
+    }
+
+    mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
+    mpu.setGyroRange(MPU6050_RANGE_250_DEG);
+    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+
+    // Initialize MPUFilter
+    mpuFilter.begin(5);
+
+    logMessage(true, "SN_Sensors_MPU_Init", "MPU6050 Initialized Successfully");
+}
+#endif // SN_USE_IMU
+
 
 int16_t SN_Sensors_ADCReadChannel(uint8_t channel) {
     int16_t adc_val = 0;
@@ -159,41 +199,7 @@ float SN_Sensors_GetBatteryTemperature() {
 }
 
 
-void SN_Sensors_Init() {
-    SN_Sensors_ADCInit();
-
-    if (!ADC_NotInitialized) {
-        logMessage(true, "SN_Sensors_Init", "ADC Initialized Successfully");
-    } else {
-        logMessage(false, "SN_Sensors_Init", "ADC Initialization Failed");
-    }
-
-    // Initialize DS18B20 sensor
-    batt_temp_sensor.begin();
-    
-    if (!DS18B20_NotInitialized) {
-        logMessage(true, "SN_Sensors_Init", "DS18B20 Initialized Successfully");
-    } else {
-        logMessage(false, "SN_Sensors_Init", "DS18B20 Initialization Failed");
-    }
-}
-
-
-void SN_Sensors_MPU_Init() {
-    if (!mpu.begin()) {
-        logMessage(false, "SN_Sensors_MPU_Init", "Failed to initialize MPU6050.");
-        return;
-    }
-
-    mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
-    mpu.setGyroRange(MPU6050_RANGE_250_DEG);
-    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
-
-    // Initialize MPUFilter
-    mpuFilter.begin(5);
-
-    logMessage(true, "SN_Sensors_MPU_Init", "MPU6050 Initialized Successfully");
-}
+#if SN_USE_IMU == 1
 
 // This function is called from the read_MPU() function each time
 void mpuCalibrationEventHandler(const sensors_event_t &accel, const sensors_event_t &gyro)
@@ -387,6 +393,7 @@ void SN_ClearMPUCalibrationData()
 
     logMessage(true, "SN_ClearMPUCalibrationData", "All MPU calibration preferences cleared.");
 }
+#endif // SN_USE_IMU
 
 #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
 
@@ -395,4 +402,4 @@ void SN_ClearMPUCalibrationData()
 
 
 
-#endif
+#endif // End of SN_XR4_BOARD_TYPE check
