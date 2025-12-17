@@ -2,21 +2,39 @@
 #include <SN_Joystick.h>
 #include <SN_XR_Board_Types.h>
 
+#if SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
+#include <Preferences.h>
+#endif
+
 // uint16_t joystick_x_adc_val, joystick_y_adc_val; 
 float x_volt, y_volt;
 
 // X-axis --> Forward/Backward
 // Y-axis --> Left/Right
 
-// Joystick Presets
-constexpr int JOYSTICK_X_NEUTRAL = 1856;
-constexpr int JOYSTICK_Y_NEUTRAL = 1880;
+// ========================================
+// Joystick Presets (Factory Defaults)
+// ========================================
+constexpr int JOYSTICK_X_NEUTRAL_DEFAULT = 1856;
+constexpr int JOYSTICK_Y_NEUTRAL_DEFAULT = 1880;
 
 constexpr int JOYSTICK_MAX = 4095;
 constexpr int JOYSTICK_MIN = 0;
 
 constexpr int JOYSTICK_X_DEADBAND = 10;
 constexpr int JOYSTICK_Y_DEADBAND = 10;
+
+// ========================================
+// Runtime Calibration Values
+// ========================================
+#if SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
+static int JOYSTICK_X_NEUTRAL = JOYSTICK_X_NEUTRAL_DEFAULT;
+static int JOYSTICK_Y_NEUTRAL = JOYSTICK_Y_NEUTRAL_DEFAULT;
+
+#if JOYSTICK_CALIBRATION_ENABLED
+static Preferences joystick_preferences;
+#endif
+#endif
 
 
 #if SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
@@ -36,55 +54,156 @@ constexpr int JOYSTICK_Y_DEADBAND = 10;
                                                : ((REG_READ(GPIO_IN1_REG) >> ((gpio_num) - 32)) & 1))
 
 
+// ========================================
+// Legacy Input Initialization (DEPRECATED)
+// ========================================
+// This function is deprecated - switch inputs now managed by SN_Switches library
+// Keeping function for backward compatibility but with minimal functionality
 void SN_Input_Init() {
-    // Initialize GPIO pins for joystick and CTU inputs
+    // Initialize only joystick GPIO pins
     pinMode(joystick_x_pin, INPUT);
     pinMode(joystick_y_pin, INPUT);
     
-    pinMode(emergency_stop_pin, INPUT_PULLUP);
-    pinMode(armed_pin, INPUT_PULLUP);
-    pinMode(headlights_on_pin, INPUT_PULLUP);
-    pinMode(buzzer_pin, INPUT_PULLUP);
+    // Legacy switch pins now managed by SN_Switches - do not initialize here
+    // GPIO 4, 14, 19, 23, 32, 33 are handled by SN_Switches_Init()
+    
+    // Optional: Initialize remaining button pins if physically wired
     pinMode(button_a_pin, INPUT_PULLUP);
     pinMode(button_b_pin, INPUT_PULLUP);
     pinMode(button_c_pin, INPUT_PULLUP);
-    pinMode(button_d_pin, INPUT_PULLUP);
+    // button_d_pin removed - GPIO 14 now used for E-STOP in SN_Switches
 
-    logMessage(true, "SN_Input_Init", "Input Pins Initialized");
+    logMessage(true, "SN_Input_Init", "Joystick and legacy button pins initialized");
 }
 
 void SN_Joystick_Init(){
     pinMode(joystick_x_pin, INPUT);
     pinMode(joystick_y_pin, INPUT);
-    logMessage(true, "SN_Joystick_Init", "Joystick Initialized");
+    
+#if JOYSTICK_CALIBRATION_ENABLED
+    // Load calibration from preferences
+    SN_Joystick_LoadCalibration();
+    logMessage(true, "SN_Joystick_Init", "Joystick Initialized - X_Neutral: %d, Y_Neutral: %d", 
+               JOYSTICK_X_NEUTRAL, JOYSTICK_Y_NEUTRAL);
+#else
+    logMessage(true, "SN_Joystick_Init", "Joystick Initialized (No Calibration)");
+#endif
 }
 
-// ---- READ ADC VALUES ----
-// Read the raw ADC values from the joystick
-// and apply deadband filtering
-// The deadband is the range around the neutral value
-// where the joystick is considered to be at rest
-// If the joystick is within this range, the raw value is set to the neutral value
-// This is to prevent small movements from being detected
-// as joystick movements
-// The deadband is defined as a constant value
-// The neutral value is the value of the joystick when it is at rest
-// The raw value is the value of the joystick when it is moved
-// The raw value is read from the ADC
+// ========================================
+// Calibration Functions
+// ========================================
 
+#if JOYSTICK_CALIBRATION_ENABLED
 
-// ----- Read Raw ADC Values with Deadband -----
+void SN_Joystick_LoadCalibration() {
+    joystick_preferences.begin("joystick", true);  // Read-only mode
+    
+    JOYSTICK_X_NEUTRAL = joystick_preferences.getUInt("x_neutral", JOYSTICK_X_NEUTRAL_DEFAULT);
+    JOYSTICK_Y_NEUTRAL = joystick_preferences.getUInt("y_neutral", JOYSTICK_Y_NEUTRAL_DEFAULT);
+    
+    joystick_preferences.end();
+    
+    logMessage(true, "SN_Joystick_LoadCalibration", 
+               "Loaded calibration - X: %d, Y: %d", JOYSTICK_X_NEUTRAL, JOYSTICK_Y_NEUTRAL);
+}
+
+void SN_Joystick_Calibrate() {
+    logMessage(true, "SN_Joystick_Calibrate", "Starting calibration - center joystick...");
+    
+    // Take 100 samples over 1 second for accurate calibration
+    uint32_t x_sum = 0, y_sum = 0;
+    const int samples = 100;
+    
+    for (int i = 0; i < samples; i++) {
+        x_sum += analogRead(joystick_x_pin);
+        y_sum += analogRead(joystick_y_pin);
+        delay(10);  // 10ms between samples = 1 second total
+    }
+    
+    JOYSTICK_X_NEUTRAL = x_sum / samples;
+    JOYSTICK_Y_NEUTRAL = y_sum / samples;
+    
+    // Save to preferences
+    joystick_preferences.begin("joystick", false);  // Read-write mode
+    joystick_preferences.putUInt("x_neutral", JOYSTICK_X_NEUTRAL);
+    joystick_preferences.putUInt("y_neutral", JOYSTICK_Y_NEUTRAL);
+    joystick_preferences.end();
+    
+    logMessage(true, "SN_Joystick_Calibrate", 
+               "Calibration complete - X: %d, Y: %d (saved to NVS)", 
+               JOYSTICK_X_NEUTRAL, JOYSTICK_Y_NEUTRAL);
+}
+
+void SN_Joystick_ResetCalibration() {
+    joystick_preferences.begin("joystick", false);
+    joystick_preferences.clear();
+    joystick_preferences.end();
+    
+    JOYSTICK_X_NEUTRAL = JOYSTICK_X_NEUTRAL_DEFAULT;
+    JOYSTICK_Y_NEUTRAL = JOYSTICK_Y_NEUTRAL_DEFAULT;
+    
+    logMessage(true, "SN_Joystick_ResetCalibration", 
+               "Reset to factory defaults - X: %d, Y: %d", 
+               JOYSTICK_X_NEUTRAL, JOYSTICK_Y_NEUTRAL);
+}
+
+void SN_Joystick_GetNeutralValues(uint16_t* x_neutral, uint16_t* y_neutral) {
+    if (x_neutral) *x_neutral = JOYSTICK_X_NEUTRAL;
+    if (y_neutral) *y_neutral = JOYSTICK_Y_NEUTRAL;
+}
+
+#endif // JOYSTICK_CALIBRATION_ENABLED
+
+// ========================================
+// ADC Reading with Optional Averaging
+// ========================================
+
+/**
+ * Read joystick ADC values with optional averaging
+ * 
+ * Averaging reduces noise but increases read time:
+ * - 1 sample:  ~20µs (no averaging)
+ * - 4 samples: ~80µs (recommended balance)
+ * - 8 samples: ~160µs (maximum smoothing)
+ * 
+ * Deadband filtering further reduces jitter
+ */
 JoystickRawADCValues_t SN_Joystick_ReadRawADCValues() {
     JoystickRawADCValues_t values;
 
+#if JOYSTICK_ADC_AVERAGING_ENABLED
+    // ADC averaging for noise reduction
+    uint32_t x_sum = 0, y_sum = 0;
+    
+    for (int i = 0; i < JOYSTICK_ADC_SAMPLE_COUNT; i++) {
+        x_sum += analogRead(joystick_x_pin);
+        y_sum += analogRead(joystick_y_pin);
+    }
+    
+    values.joystick_x_raw_val = x_sum / JOYSTICK_ADC_SAMPLE_COUNT;
+    values.joystick_y_raw_val = y_sum / JOYSTICK_ADC_SAMPLE_COUNT;
+#else
+    // Single sample (fastest, more noise)
     values.joystick_x_raw_val = analogRead(joystick_x_pin);
     values.joystick_y_raw_val = analogRead(joystick_y_pin);
+#endif
 
-    // Apply deadband
-    if (abs(values.joystick_x_raw_val - JOYSTICK_X_NEUTRAL) < JOYSTICK_X_DEADBAND) {
+    // Input validation - ensure ADC values are in valid range
+    if (values.joystick_x_raw_val > JOYSTICK_MAX) {
+        logMessage(true, "SN_Joystick", "WARNING: X ADC out of range: %d", values.joystick_x_raw_val);
         values.joystick_x_raw_val = JOYSTICK_X_NEUTRAL;
     }
-    if (abs(values.joystick_y_raw_val - JOYSTICK_Y_NEUTRAL) < JOYSTICK_Y_DEADBAND) {
+    if (values.joystick_y_raw_val > JOYSTICK_MAX) {
+        logMessage(true, "SN_Joystick", "WARNING: Y ADC out of range: %d", values.joystick_y_raw_val);
+        values.joystick_y_raw_val = JOYSTICK_Y_NEUTRAL;
+    }
+
+    // Apply deadband - prevents jitter near neutral position
+    if (abs((int)values.joystick_x_raw_val - JOYSTICK_X_NEUTRAL) < JOYSTICK_X_DEADBAND) {
+        values.joystick_x_raw_val = JOYSTICK_X_NEUTRAL;
+    }
+    if (abs((int)values.joystick_y_raw_val - JOYSTICK_Y_NEUTRAL) < JOYSTICK_Y_DEADBAND) {
         values.joystick_y_raw_val = JOYSTICK_Y_NEUTRAL;
     }
 
@@ -92,23 +211,24 @@ JoystickRawADCValues_t SN_Joystick_ReadRawADCValues() {
 }
 
 // ----- Read CTU Input States -----
+// DEPRECATED: This function is replaced by SN_Switches library
+// All switch inputs (E-STOP, ARM, Headlights, buttons) now use SN_Switches_GetState()
+// This function kept for backward compatibility but returns zeroed struct
 CTU_InputStates_t SN_CTU_ReadInputStates() {
-    CTU_InputStates_t input_states;
-
-    // Read GPIO32–39 using GPIO_IN1_REG (bitmask is for 0-7 of this block)
-    uint32_t gpio_high = REG_READ(GPIO_IN1_REG);
-    // Read GPIO0–31 using GPIO_IN_REG
-    uint32_t gpio_low  = REG_READ(GPIO_IN_REG);
-
-    input_states.Emergency_Stop   = READ_GPIO(emergency_stop_pin);
-    input_states.Armed            = READ_GPIO(armed_pin);
-    input_states.Headlights_On    = READ_GPIO(headlights_on_pin);
-    input_states.Buzzer           = READ_GPIO(buzzer_pin);
-    input_states.Button_A         = READ_GPIO(button_a_pin);
-    input_states.Button_B         = READ_GPIO(button_b_pin);
-    input_states.Button_C         = READ_GPIO(button_c_pin);
-    input_states.Button_D         = READ_GPIO(button_d_pin);
-
+    CTU_InputStates_t input_states = {};  // Zero-initialize all fields
+    
+    // Legacy switch reading disabled - use SN_Switches library instead
+    // Example: SN_Switches_GetState(SWITCH_ESTOP) for E-STOP
+    //          SN_Switches_GetState(SWITCH_ARM) for ARM
+    //          SN_Switches_GetState(SWITCH_HEADLIGHTS) for Headlights
+    
+    // Optional: Read only button pins that are still defined
+    input_states.Button_A = READ_GPIO(button_a_pin);
+    input_states.Button_B = READ_GPIO(button_b_pin);
+    input_states.Button_C = READ_GPIO(button_c_pin);
+    
+    logMessage(false, "SN_CTU_ReadInputStates", "DEPRECATED - Use SN_Switches library instead");
+    
     return input_states;
 }
 
