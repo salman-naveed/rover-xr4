@@ -68,7 +68,7 @@ typedef struct telecommand_data {
 // bool CTU_TM_received_data_ready;
 // uint8_t CTU_TM_last_received_data_type;
 
-void SN_ESPNOW_Init();
+bool SN_ESPNOW_Init();
 
 bool SN_ESPNOW_register_send_cb();
 
@@ -94,4 +94,6 @@ void SN_Telemetry_updateStruct(xr4_system_context_t context);
 
 void SN_Telecommand_updateStruct(xr4_system_context_t context);
 
+// --- Helper for consistent cleanup ---
+void SN_ESPNOW_DeinitOnError();
 
