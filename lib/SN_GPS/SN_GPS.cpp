@@ -35,20 +35,28 @@ unsigned long lastGPSFixTime = 0;
 const unsigned long gpsTimeout = 10000; // 10 seconds
 
 bool SN_GPS_Init() {
+    // Initialize GPS data to safe defaults
+    xr4_system_context.GPS_lat = 0.0;
+    xr4_system_context.GPS_lon = 0.0;
+    xr4_system_context.GPS_time = 0.0;
+    xr4_system_context.GPS_fix = false; // Start with no fix
+    lastGPSFixTime = 0; // No fix yet
+    
     GPS_SoftSerial.begin(GPS_Baud_Rate);
 
-    delay(1000); // Give the module time to respond
+    delay(100); // Reduced delay to 100ms instead of 1000ms
 
     gps_ticker.attach_ms(500, SN_GPS_Handler); // call GPS handler every 500ms
     gps_healthcheck_ticker.attach_ms(1000, checkGPSHealth); // check GPS health every second
 
+    // Check if GPS is responding, but don't block if it isn't
     if (millis() > 5000 && gps.charsProcessed() < 10) {
-        GPS_LOG("SN_GPS_Init", "No GPS detected: check wiring.");
-        return false;
+        GPS_LOG("SN_GPS_Init", "No GPS detected: check wiring - continuing without GPS");
+    } else {
+        GPS_LOG("SN_GPS_Init", "GPS Initialized - will acquire fix in background");
     }
 
-    GPS_LOG("SN_GPS_Init", "GPS Initialized");
-    return true;
+    return true; // Always return true to allow rover to continue
 }
 
 void SN_GPS_Handler() {
@@ -104,7 +112,7 @@ void SN_GPS_extractData() {
 }
 
 void checkGPSHealth() {
-    if (millis() - lastGPSFixTime > gpsTimeout) {
+    if (millis() - lastGPSFixTime > gpsTimeout && lastGPSFixTime > 0) {
         GPS_LOG("GPS Watchdog", "GPS signal lost or timed out");
         xr4_system_context.GPS_fix = false;
     }
