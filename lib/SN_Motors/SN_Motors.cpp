@@ -21,3 +21,8 @@ void SN_Motors_Drive(int16_t leftSpeed, int16_t rightSpeed) {
     leftMotors.driveWithRamp(leftSpeed);
     rightMotors.driveWithRamp(rightSpeed);
 }
+
+void SN_Motors_Stop() {
+    leftMotors.stop();
+    rightMotors.stop();
+}
