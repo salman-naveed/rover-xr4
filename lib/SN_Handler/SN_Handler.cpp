@@ -1,11 +1,17 @@
 #include <Arduino.h>
 #include <SN_Handler.h>
+#include <SN_StatusPanel.h>
 #include <SN_ESPNOW.h>
 // #include <SN_Common.h>
 #include <SN_Logger.h>
 #include <SN_Joystick.h>
 #include <SN_XR_Board_Types.h>
 #include <SN_Motors.h>
+
+#if SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
+#include <SN_Switches.h>
+#include <SN_LCD.h>
+#endif
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -67,6 +73,9 @@ extern uint8_t OBC_TC_last_received_data_type;
 #if SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
 
 void SN_CTU_MainHandler(){
+  // Update switch states (includes debouncing)
+  SN_Switches_Update();
+  
   // CTU Handler
   SN_Telemetry_updateContext(CTU_TM_last_received_data_type);
 
@@ -75,6 +84,9 @@ void SN_CTU_MainHandler(){
   SN_Telecommand_updateStruct(xr4_system_context);
 
   SN_ESPNOW_SendTelecommand(TC_C2_DATA_MSG);
+  
+  // Update LCD display (non-blocking, updates at configured interval)
+  SN_LCD_Update(&xr4_system_context);
 
 }
 
@@ -82,22 +94,60 @@ void SN_CTU_ControlInputsHandler(){
 
   JoystickRawADCValues_t CTU_joystick_raw_adc_values = SN_Joystick_ReadRawADCValues();
 
-  CTU_InputStates_t CTU_input_states = SN_CTU_ReadInputStates();
+  // Get switch states (debounced and interrupt-driven)
+  SwitchStates_t switch_states = SN_Switches_GetStates();
 
   // Update the XR4 system context with the joystick values
   xr4_system_context.Joystick_X = CTU_joystick_raw_adc_values.joystick_x_raw_val;
   xr4_system_context.Joystick_Y = CTU_joystick_raw_adc_values.joystick_y_raw_val;
 
-  // Update the XR4 system context with the control inputs
-  xr4_system_context.Emergency_Stop = CTU_input_states.Emergency_Stop;
-  xr4_system_context.Armed = CTU_input_states.Armed;
-  xr4_system_context.Headlights_On = CTU_input_states.Headlights_On;
-  xr4_system_context.Buzzer = CTU_input_states.Buzzer;
-  xr4_system_context.Button_A = CTU_input_states.Button_A;
-  xr4_system_context.Button_B = CTU_input_states.Button_B;
-  xr4_system_context.Button_C = CTU_input_states.Button_C;
-  xr4_system_context.Button_D = CTU_input_states.Button_D;
-  xr4_system_context.CTU_RSSI = SN_ESPNOW_GetRSSI();
+  // Update the XR4 system context with the control inputs from new switch handler
+  // NOTE: E-STOP is handled by hardware interrupt (ISR) - do NOT overwrite it here!
+  // xr4_system_context.Emergency_Stop = switch_states.estop_switch;  // REMOVED - ISR updates this directly
+  xr4_system_context.Armed = switch_states.arm_switch;
+  xr4_system_context.Headlights_On = switch_states.headlights_switch;
+  
+  // Update encoder position
+  xr4_system_context.Encoder_Pos = (uint16_t)switch_states.encoder_position;
+  
+  // ========================================
+  // LCD Navigation Using Rotary Encoder
+  // ========================================
+  // Navigate LCD pages using encoder delta (CW = next page, CCW = previous page)
+  if (switch_states.encoder_delta > 0) {
+    // Clockwise rotation - next page
+    SN_LCD_NextPage();
+  } else if (switch_states.encoder_delta < 0) {
+    // Counter-clockwise rotation - previous page
+    SN_LCD_PrevPage();
+  }
+  
+  // Rotary button press - currently unused, can be used for future features
+  // (e.g., select menu items, reset encoder, toggle backlight, etc.)
+  if (switch_states.rotary_pressed) {
+    // Future feature: Enter/select current page option
+    logMessage(true, "SN_CTU_ControlInputsHandler", "Rotary button pressed on page %d", SN_LCD_GetCurrentPage());
+  }
+  
+  // ========================================
+  // Legacy Button Inputs (Optional)
+  // ========================================
+  // Note: The old SN_CTU_ReadInputStates() function has been removed to eliminate
+  // GPIO conflicts with the new SN_Switches system.
+  // 
+  // If you have physical buttons wired to GPIO 25, 26, 27:
+  // 1. Read them directly: digitalRead(button_a_pin), etc.
+  // 2. Or integrate into SN_Switches library for debouncing
+  // 
+  // For now, setting these to false (no buttons connected)
+  xr4_system_context.Buzzer = false;     // No buzzer switch in current design
+  xr4_system_context.Button_A = false;   // Set to true if GPIO 25 has button wired
+  xr4_system_context.Button_B = false;   // Set to true if GPIO 26 has button wired
+  xr4_system_context.Button_C = false;   // Set to true if GPIO 27 has button wired
+  xr4_system_context.Button_D = false;   // GPIO 14 now used for E-STOP, not button
+  
+  // CTU RSSI is measured at receiver (OBC) side, not at transmitter
+  xr4_system_context.CTU_RSSI = 0;  // OBC will measure this when receiving telecommand
 }
 
 uint8_t SN_CTU_get_OBC_Communication_Mode() {
@@ -114,45 +164,20 @@ uint8_t SN_CTU_read_Emergency_Stop() {
 
 #elif SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 
-void SN_OBC_TurnOnHeadlights() {
-  xr4_system_context.Headlights_On = 1;
-
-  // add GPIO control code here for headlights
-}
-
-void SN_OBC_TurnOffHeadlights() {
-  xr4_system_context.Headlights_On = 0;
-
-  // add GPIO control code here for headlights
-}
-
 void SN_OBC_ExecuteCommands() {
   // Execute HIGH PRIORITY commands received from CTU
-  if(xr4_system_context.Emergency_Stop == 1 && xr4_system_context.Armed == 0) {
-    EMERGENCY_STOP_ACTIVE = true;
-    ARMED = false;
-  } else if(xr4_system_context.Emergency_Stop == 1 && xr4_system_context.Armed == 1) {
-    EMERGENCY_STOP_ACTIVE = true;
-    ARMED = false;
-  } else if(xr4_system_context.Emergency_Stop == 0 && xr4_system_context.Armed == 1) {
-    EMERGENCY_STOP_ACTIVE = false;
-    ARMED = true;
-  } else if(xr4_system_context.Emergency_Stop == 0 && xr4_system_context.Armed == 0) {
-    EMERGENCY_STOP_ACTIVE = false;
-    ARMED = false;
-  } else {
-    ERROR_EVENT = true;
+  if (xr4_system_context.Emergency_Stop) {
+    xr4_system_context.system_state = XR4_STATE_EMERGENCY_STOP;
+  } else if (xr4_system_context.Armed && xr4_system_context.system_state != XR4_STATE_ARMED) {
+    logMessage(true, "SN_OBC_ExecuteCommands", "Rover ARMED. Switching to ARMED state.");
+    xr4_system_context.system_state = XR4_STATE_ARMED;
+  } else if (!xr4_system_context.Armed && xr4_system_context.system_state != XR4_STATE_WAITING_FOR_ARM) {
+    xr4_system_context.system_state = XR4_STATE_WAITING_FOR_ARM;
   }
 
   // Execute LOW PRIORITY commands received from CTU
-  if(xr4_system_context.Headlights_On == 1) {
-    SN_OBC_TurnOnHeadlights();
-  } else if(xr4_system_context.Headlights_On == 0) {
-    SN_OBC_TurnOffHeadlights();
-  }
-
+  SN_StatusPanel__ControlHeadlights(xr4_system_context.Headlights_On);
   // add handling for COMMAND & COMM_MODE
-
 }
 
 void SN_OBC_DrivingHandler() {
@@ -161,16 +186,11 @@ void SN_OBC_DrivingHandler() {
     SN_Motors_Drive(0, 0);
     return;
   }
-  else if(ARMED) {
-    // Map joystick values to motor speeds
-    // Joystick values are in the range of 0-1023, map them to -100 to 100
-    JoystickMappedValues_t joystick_values;
+  // Drive the motors based on joystick values
+  JoystickMappedValues_t joystick_values;
+  joystick_values = SN_Joystick_OBC_MapADCValues(xr4_system_context.Joystick_X, xr4_system_context.Joystick_Y);
+  SN_Motors_Drive(joystick_values.joystick_x_mapped_val, joystick_values.joystick_y_mapped_val);
 
-    joystick_values = SN_Joystick_OBC_MapADCValues(xr4_system_context.Joystick_X, xr4_system_context.Joystick_Y);
-
-    SN_Motors_Drive(joystick_values.joystick_x_mapped_val, joystick_values.joystick_y_mapped_val);
-    return;
-  }
 }
 
 // OBC Handler
