@@ -1,7 +1,26 @@
+#ifndef SN_COMMON_H
+#define SN_COMMON_H
 
 #include <Arduino.h>
 
-typedef struct xr4_system_context {
+
+
+// Device states for state machine
+#define XR4_STATE_JUST_POWERED_ON 0
+#define XR4_STATE_INITIALIZED 1
+#define XR4_STATE_COMMS_CONFIG 2
+#define XR4_STATE_WAITING_FOR_ARM 3
+#define XR4_STATE_ARMED 4
+#define XR4_STATE_ERROR 5
+#define XR4_STATE_EMERGENCY_STOP 6
+#define XR4_STATE_REBOOT 8
+
+
+typedef struct system_context {
+    // Common fields (both OBC and CTU)
+    uint8_t system_state;
+
+
     // OBC-specific fields (Telemetry, OBC -> CTU)
     double GPS_lat;
     double GPS_lon;
@@ -44,4 +63,4 @@ typedef struct xr4_system_context {
 
 } xr4_system_context_t;
 
-
+#endif // SN_COMMON_H
