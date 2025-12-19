@@ -134,7 +134,7 @@ void loop() {
       if (SN_ESPNOW_Init()) {
         logMessage(true, "Main Loop", "ESP-NOW initialized successfully in COMMS_CONFIG state");
         espnow_init_success = true; // Set flag when ESP-NOW initializes successfully
-        SN_StatusPanel__SetStatusLedState(Moving_Back_Forth);
+        SN_StatusPanel__SetStatusLedState(Solid_Blue);
         xr4_system_context.system_state = XR4_STATE_WAITING_FOR_ARM;
       } else {
         logMessage(true, "Main Loop", "ESP-NOW initialization failed in COMMS_CONFIG state");
@@ -189,8 +189,7 @@ void loop() {
       break;
     }
 
-    case XR4_STATE_EMERGENCY_STOP:
-      // Perform actions for EMERGENCY_STOP state
+    case XR4_STATE_EMERGENCY_STOP: {      // Perform actions for EMERGENCY_STOP state
       SN_StatusPanel__SetStatusLedState(Blink_Red); // Emergency stop active
       #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
       SN_Motors_Stop();
@@ -199,14 +198,30 @@ void loop() {
       SN_CTU_MainHandler();
       #endif
       break;
+    }
 
-    case XR4_STATE_REBOOT:
-      // Perform actions for REBOOT state
+    case XR4_STATE_OTA_FW_UPDATE: {
+      // Perform actions for OTA_FW_UPDATE state
+      SN_StatusPanel__SetStatusLedState(Blink_XR4);
+      logMessage(true, "Main Loop", "Entering OTA Firmware Update mode...");
+      #if SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
+      
+
+      #elif SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
+
+      #endif
+
+      // After OTA update, system should reboot or return to a safe state
+      break;
+    }
+
+    case XR4_STATE_REBOOT: {      // Perform actions for REBOOT state
       SN_StatusPanel__SetStatusLedState(Blink_Yellow);
       logMessage(true, "Main Loop", "Rebooting system...");
       delay(100); // Give time for log message to send
       ESP.restart();
       break;
+    }
 
     default:
       // Handle unknown states
