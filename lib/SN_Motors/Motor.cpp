@@ -9,12 +9,16 @@ Motor::Motor(mcpwm_unit_t unit, mcpwm_timer_t timer)
 void Motor::initPWM(uint32_t frequency) {
     mcpwm_config_t config = {
         .frequency = frequency,
-        .cmpr_a = 0,
-        .cmpr_b = 0,
+        .cmpr_a = 0,    // Start with 0% duty cycle
+        .cmpr_b = 0,    // Start with 0% duty cycle
         .duty_mode = MCPWM_DUTY_MODE_0,
         .counter_mode = MCPWM_UP_COUNTER            
     };
     mcpwm_init(unit, timer, &config);
+    
+    // Explicitly ensure both outputs are LOW after init
+    mcpwm_set_signal_low(unit, timer, MCPWM_OPR_A);
+    mcpwm_set_signal_low(unit, timer, MCPWM_OPR_B);
 }
 
 void Motor::driveForward(float dutyPercent) {
@@ -43,6 +47,10 @@ void MotorGroup::init(uint32_t frequency) {
 }
 
 void MotorGroup::drive(int16_t speedPercent) {
+    // Clamp speed to valid range [-100, 100]
+    if (speedPercent > 100) speedPercent = 100;
+    if (speedPercent < -100) speedPercent = -100;
+    
     if (speedPercent > 0) {
         m1.driveForward(speedPercent);
         m2.driveForward(speedPercent);
@@ -76,6 +84,30 @@ void MotorGroup::stop() {
 void MotorGPIO::init() {
     logMessage(true, "MotorGPIO", "Initializing MCPWM GPIOs");
 
+    // Initialize all motor control pins as OUTPUT and set LOW before MCPWM init
+    // This prevents any floating states that could cause motors to run
+    pinMode(M1_LF_PWM0A_OUT, OUTPUT);
+    pinMode(M1_LF_PWM0B_OUT, OUTPUT);
+    pinMode(M2_LR_PWM1A_OUT, OUTPUT);
+    pinMode(M2_LR_PWM1B_OUT, OUTPUT);
+    pinMode(M3_RF_PWM0A_OUT, OUTPUT);
+    pinMode(M3_RF_PWM0B_OUT, OUTPUT);
+    pinMode(M4_RR_PWM1A_OUT, OUTPUT);
+    pinMode(M4_RR_PWM1B_OUT, OUTPUT);
+    
+    // Set all pins LOW to ensure motors are stopped
+    digitalWrite(M1_LF_PWM0A_OUT, LOW);
+    digitalWrite(M1_LF_PWM0B_OUT, LOW);
+    digitalWrite(M2_LR_PWM1A_OUT, LOW);
+    digitalWrite(M2_LR_PWM1B_OUT, LOW);
+    digitalWrite(M3_RF_PWM0A_OUT, LOW);
+    digitalWrite(M3_RF_PWM0B_OUT, LOW);
+    digitalWrite(M4_RR_PWM1A_OUT, LOW);
+    digitalWrite(M4_RR_PWM1B_OUT, LOW);
+    
+    delay(100); // Allow pins to settle
+
+    // Now initialize MCPWM
     mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, M1_LF_PWM0A_OUT);
     mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0B, M1_LF_PWM0B_OUT);
 
@@ -88,5 +120,5 @@ void MotorGPIO::init() {
     mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM1A, M4_RR_PWM1A_OUT);
     mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM1B, M4_RR_PWM1B_OUT);
 
-    logMessage(true, "MotorGPIO", "GPIOs Initialized");
+    logMessage(true, "MotorGPIO", "GPIOs Initialized and set to safe state");
 }

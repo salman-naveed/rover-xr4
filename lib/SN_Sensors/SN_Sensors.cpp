@@ -182,6 +182,7 @@ float SN_Sensors_ADCGetParameterValue(uint8_t channel) {
 }
 
 float SN_Sensors_GetBatteryTemperature() {
+#if SN_USE_TEMPERATURE_SENSOR == 1
     float battery_temp = 0.0;
 
     // Request temperature from the DS18B20 sensor
@@ -196,6 +197,11 @@ float SN_Sensors_GetBatteryTemperature() {
     }
 
     return battery_temp;
+#else
+    // Temperature sensor not enabled - return default value
+    logMessage(false, "SN_Sensors_GetBatteryTemperature()", "Temperature sensor not enabled (SN_USE_TEMPERATURE_SENSOR=0)");
+    return 0.0;
+#endif // SN_USE_TEMPERATURE_SENSOR
 }
 
 

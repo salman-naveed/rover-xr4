@@ -1,5 +1,4 @@
 
-
 #include <stdio.h>
 
 #include "freertos/FreeRTOS.h"
@@ -12,6 +11,12 @@
 #define GPIO_PWM0A_OUT 15   //Set GPIO 15 as PWM0A
 #define GPIO_PWM0B_OUT 16   //Set GPIO 16 as PWM0B
 
+/* UNUSED EXAMPLE CODE - All functions commented out to prevent compiler warnings
+ * This file contains reference implementations that are not currently used.
+ * The actual motor control is implemented in Motor.cpp and SN_Motors.cpp
+ */
+
+/* 
 static void mcpwm_example_gpio_initialize(void)
 {
     printf("initializing mcpwm gpio...\n");
@@ -21,7 +26,7 @@ static void mcpwm_example_gpio_initialize(void)
 
 /**
  * @brief motor moves in forward direction, with duty cycle = duty %
- */
+ *//*
 static void brushed_motor_forward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num , float duty_cycle)
 {
     mcpwm_set_signal_low(mcpwm_num, timer_num, MCPWM_OPR_B);
@@ -31,7 +36,7 @@ static void brushed_motor_forward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_nu
 
 /**
  * @brief motor moves in backward direction, with duty cycle = duty %
- */
+ *//*
 static void brushed_motor_backward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num , float duty_cycle)
 {
     mcpwm_set_signal_low(mcpwm_num, timer_num, MCPWM_OPR_A);
@@ -41,7 +46,7 @@ static void brushed_motor_backward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_n
 
 /**
  * @brief motor stop
- */
+ *//*
 static void brushed_motor_stop(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num)
 {
     mcpwm_set_signal_low(mcpwm_num, timer_num, MCPWM_OPR_A);
@@ -50,7 +55,8 @@ static void brushed_motor_stop(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num)
 
 /**
  * @brief Configure MCPWM module for brushed dc motor
- */
+ * NOTE: This is example/reference code and not currently used in the Motor class implementation
+ *//*
 static void mcpwm_example_brushed_motor_control(void *arg)
 {
     //1. mcpwm gpio initialization
@@ -74,6 +80,7 @@ static void mcpwm_example_brushed_motor_control(void *arg)
         vTaskDelay(2000 / portTICK_RATE_MS);
     }
 }
+*/
 
 // void app_main(void)
 // {

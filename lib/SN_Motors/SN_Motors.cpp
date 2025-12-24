@@ -14,12 +14,16 @@ void SN_Motors_Init() {
     MotorGPIO::init();
     leftMotors.init();
     rightMotors.init();
-    logMessage(true, "SN_Motors_Init", "Motors initialized");
+    // Ensure motors start in stopped state
+    leftMotors.stop();
+    rightMotors.stop();
+    logMessage(true, "SN_Motors_Init", "Motors initialized and stopped");
 }
 
 void SN_Motors_Drive(int16_t leftSpeed, int16_t rightSpeed) {
-    leftMotors.driveWithRamp(leftSpeed);
-    rightMotors.driveWithRamp(rightSpeed);
+    // Direct drive - no logging for maximum responsiveness
+    leftMotors.drive(leftSpeed);
+    rightMotors.drive(rightSpeed);
 }
 
 void SN_Motors_Stop() {
