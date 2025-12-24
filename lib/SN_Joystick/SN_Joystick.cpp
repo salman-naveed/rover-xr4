@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <SN_Joystick.h>
 #include <SN_XR_Board_Types.h>
+#include <SN_Logger.h>
 
 #if SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
 #include <Preferences.h>
@@ -15,8 +16,9 @@ float x_volt, y_volt;
 // ========================================
 // Joystick Presets (Factory Defaults)
 // ========================================
-constexpr int JOYSTICK_X_NEUTRAL_DEFAULT = 1856;
-constexpr int JOYSTICK_Y_NEUTRAL_DEFAULT = 1880;
+// Updated neutral values based on actual measurements
+constexpr int JOYSTICK_X_NEUTRAL_DEFAULT = 2117;  // Measured neutral for X-axis (Forward/Backward)
+constexpr int JOYSTICK_Y_NEUTRAL_DEFAULT = 2000;  // Measured neutral for Y-axis (Left/Right)
 
 constexpr int JOYSTICK_MAX = 4095;
 constexpr int JOYSTICK_MIN = 0;
@@ -34,6 +36,10 @@ static int JOYSTICK_Y_NEUTRAL = JOYSTICK_Y_NEUTRAL_DEFAULT;
 #if JOYSTICK_CALIBRATION_ENABLED
 static Preferences joystick_preferences;
 #endif
+#elif SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
+// OBC uses the same neutral values for mapping received joystick data
+static const int JOYSTICK_X_NEUTRAL = JOYSTICK_X_NEUTRAL_DEFAULT;
+static const int JOYSTICK_Y_NEUTRAL = JOYSTICK_Y_NEUTRAL_DEFAULT;
 #endif
 
 
@@ -241,13 +247,22 @@ CTU_InputStates_t SN_CTU_ReadInputStates() {
 JoystickMappedValues_t SN_Joystick_OBC_MapADCValues(uint16_t joystick_x_adc_val, uint16_t joystick_y_adc_val) {
     JoystickMappedValues_t mapped;
 
-    mapped.joystick_x_mapped_val = (joystick_x_adc_val == JOYSTICK_X_NEUTRAL)
-        ? 0
-        : map(joystick_x_adc_val, JOYSTICK_MIN, JOYSTICK_MAX, -100, 100);
+    // Apply deadband around neutral position
+    const int DEADBAND = 50; // ADC units around neutral position
+    
+    // X-axis (forward/backward) mapping with deadband
+    if (abs((int)joystick_x_adc_val - JOYSTICK_X_NEUTRAL) < DEADBAND) {
+        mapped.joystick_x_mapped_val = 0;
+    } else {
+        mapped.joystick_x_mapped_val = map(joystick_x_adc_val, JOYSTICK_MIN, JOYSTICK_MAX, -100, 100);
+    }
 
-    mapped.joystick_y_mapped_val = (joystick_y_adc_val == JOYSTICK_Y_NEUTRAL)
-        ? 0
-        : map(joystick_y_adc_val, JOYSTICK_MIN, JOYSTICK_MAX, -100, 100);
+    // Y-axis (left/right) mapping with deadband
+    if (abs((int)joystick_y_adc_val - JOYSTICK_Y_NEUTRAL) < DEADBAND) {
+        mapped.joystick_y_mapped_val = 0;
+    } else {
+        mapped.joystick_y_mapped_val = map(joystick_y_adc_val, JOYSTICK_MIN, JOYSTICK_MAX, -100, 100);
+    }
 
     return mapped;
 }

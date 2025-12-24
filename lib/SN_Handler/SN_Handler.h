@@ -9,6 +9,8 @@ void SN_OBC_TurnOffHeadlights();
 
 void SN_OBC_DrivingHandler();
 
+void SN_OBC_ReadSensors();
+
 void SN_CTU_MainHandler();
 
 void SN_CTU_ControlInputsHandler();

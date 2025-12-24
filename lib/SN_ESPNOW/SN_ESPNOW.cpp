@@ -208,13 +208,14 @@ bool SN_ESPNOW_add_peer(){
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 
 void SN_ESPNOW_SendTelemetry(void) {
+  // Use current_tm_index (0, 1, 2) to access the arrays properly
   telemetry_message_type_id_t msg_type = telemetry_msg_types[current_tm_index];
 
-  // Calculate elapsed time since last send
+  // Calculate elapsed time since last send using the INDEX, not the enum value
   uint64_t now_us = esp_timer_get_time(); // Get current time in microseconds
-  uint32_t elapsed_ms = (now_us - last_sent_time_us[msg_type]) / 1000;
+  uint32_t elapsed_ms = (now_us - last_sent_time_us[current_tm_index]) / 1000;
 
-  if (elapsed_ms >= telemetry_intervals_ms[msg_type]) {
+  if (elapsed_ms >= telemetry_intervals_ms[current_tm_index]) {
       SN_Telemetry_updateStruct(xr4_system_context);
       esp_err_t result;
 
@@ -234,15 +235,12 @@ void SN_ESPNOW_SendTelemetry(void) {
       }
 
       if (result == ESP_OK) {
-          logMessage(true, "SN_ESPNOW_SendTelemetry", "Sent message type %d successfully", msg_type);
-          last_sent_time_us[msg_type] = now_us; // Update last sent time
-      } else {
-          logMessage(true, "SN_ESPNOW_SendTelemetry", "Failed to send message type %d", msg_type);
+          last_sent_time_us[current_tm_index] = now_us; // Update last sent time using INDEX
       }
   }
 
-  // Cycle to next message type
-  current_tm_index = NUM_TM_MSG_TYPES;        //(current_tm_index + 1) % (sizeof(telemetry_msg_types) / sizeof(telemetry_msg_type_t));
+  // Cycle to next message type (0, 1, 2)
+  current_tm_index = (current_tm_index + 1) % NUM_TM_MSG_TYPES;
 }
 
 #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
@@ -255,13 +253,6 @@ void SN_ESPNOW_SendTelecommand(uint8_t TC_out_msg_type){
     if(TC_out_msg_type == TC_C2_DATA_MSG){
       result = esp_now_send(broadcastAddress, (uint8_t *) &CTU_out_telecommand_data, sizeof(telecommand_data_t));
     }
-
-    if (result == ESP_OK) {
-        logMessage(true, "SN_ESPNOW_SendTelecommand", "Sent with success");
-    }
-    else {
-        logMessage(true, "SN_ESPNOW_SendTelecommand", "Error sending the data");
-    }
 }
 #endif
 // --------------------------------------------------------
@@ -270,7 +261,7 @@ void SN_ESPNOW_SendTelecommand(uint8_t TC_out_msg_type){
 // Callback when data is sent
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 void OnTelemetrySend(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  logMessage(true, "OnTelemetrySend", "Telemetry Send Status: %s", status == ESP_NOW_SEND_SUCCESS ? "TM Delivery Success" : "TM Delivery Fail");  
+  // Removed logging for performance
   if (status == 0){
     success = "Delivery Success";
   }
@@ -280,7 +271,7 @@ void OnTelemetrySend(const uint8_t *mac_addr, esp_now_send_status_t status) {
 }
 #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
 void OnTelecommandSend(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  logMessage(true, "OnTelecommandSend", "Telecommand Send Status: %s", status == ESP_NOW_SEND_SUCCESS ? "TC Delivery Success" : "TC Delivery Fail");
+  // Removed logging for performance
   if (status == 0){
     success = "Delivery Success";
   }
@@ -335,30 +326,30 @@ void SN_Telecommand_updateStruct(xr4_system_context_t context){
 // ----------------- Update OBC Context with Received Telecommand -----------------
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 
-void SN_Telecommand_updateContext(telecommand_data_t OBC_in_telecommand_data){
+// PERFORMANCE CRITICAL: This function is called every main loop iteration
+// Optimized for minimum latency by eliminating unnecessary operations
+void SN_Telecommand_updateContext(const telecommand_data_t& OBC_in_telecommand_data){
   if(OBC_TC_received_data_ready) {
-    switch(OBC_TC_last_received_data_type) 
-    {
-      case TC_C2_DATA_MSG:
-        xr4_system_context.Command = OBC_in_telecommand_data.Command;
-        xr4_system_context.Joystick_X = OBC_in_telecommand_data.Joystick_X;
-        xr4_system_context.Joystick_Y = OBC_in_telecommand_data.Joystick_Y;
-        xr4_system_context.Encoder_Pos = OBC_in_telecommand_data.Encoder_Pos;
-        xr4_system_context.CTU_RSSI = OBC_in_telecommand_data.CTU_RSSI;
+    // Direct assignment - no switch needed for single message type
+    xr4_system_context.Command = OBC_in_telecommand_data.Command;
+    xr4_system_context.Joystick_X = OBC_in_telecommand_data.Joystick_X;
+    xr4_system_context.Joystick_Y = OBC_in_telecommand_data.Joystick_Y;
+    xr4_system_context.Encoder_Pos = OBC_in_telecommand_data.Encoder_Pos;
+    xr4_system_context.CTU_RSSI = OBC_in_telecommand_data.CTU_RSSI;
 
-        xr4_system_context.Emergency_Stop = get_flag(OBC_in_telecommand_data.flags, EMERGENCY_STOP_BIT);
-        xr4_system_context.Armed = get_flag(OBC_in_telecommand_data.flags, ARMED_BIT);
-        xr4_system_context.Headlights_On = get_flag(OBC_in_telecommand_data.flags, HEADLIGHTS_ON_BIT);
-        xr4_system_context.Buzzer = get_flag(OBC_in_telecommand_data.flags, BUZZER_BIT);
-        xr4_system_context.Button_A = get_flag(OBC_in_telecommand_data.flags, BUTTON_A_BIT);
-        xr4_system_context.Button_B = get_flag(OBC_in_telecommand_data.flags, BUTTON_B_BIT);
-        xr4_system_context.Button_C = get_flag(OBC_in_telecommand_data.flags, BUTTON_C_BIT);
-        xr4_system_context.Button_D = get_flag(OBC_in_telecommand_data.flags, BUTTON_D_BIT);
-        break;
-    }
+    // Inline flag extraction - faster than function calls
+    uint16_t flags = OBC_in_telecommand_data.flags;
+    xr4_system_context.Emergency_Stop = (flags >> EMERGENCY_STOP_BIT) & 1;
+    xr4_system_context.Armed = (flags >> ARMED_BIT) & 1;
+    xr4_system_context.Headlights_On = (flags >> HEADLIGHTS_ON_BIT) & 1;
+    xr4_system_context.Buzzer = (flags >> BUZZER_BIT) & 1;
+    xr4_system_context.Button_A = (flags >> BUTTON_A_BIT) & 1;
+    xr4_system_context.Button_B = (flags >> BUTTON_B_BIT) & 1;
+    xr4_system_context.Button_C = (flags >> BUTTON_C_BIT) & 1;
+    xr4_system_context.Button_D = (flags >> BUTTON_D_BIT) & 1;
+    
     OBC_TC_received_data_ready = false;
   }
-
 }
 
 #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
@@ -405,54 +396,55 @@ void SN_Telemetry_updateContext(uint8_t CTU_TM_last_received_data_type){
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 void OnTelecommandReceive(const uint8_t * mac, const uint8_t *incoming_telecommand_data, int len) {
 
-  wifi_pkt_rx_ctrl_t *rx_ctrl = (wifi_pkt_rx_ctrl_t *)incoming_telecommand_data;
-  int data_len = len - rx_ctrl->sig_len;
-  xr4_system_context.CTU_RSSI = rx_ctrl->rssi;
+  // OPTIMIZED: Direct RSSI capture without intermediate variable
+  xr4_system_context.CTU_RSSI = ((wifi_pkt_rx_ctrl_t *)incoming_telecommand_data)->rssi;
+  xr4_system_context.OBC_RSSI = xr4_system_context.CTU_RSSI;  // Same value for bidirectional link
   
-  uint8_t OBC_in_TM_msg_type;
-
-  memcpy(&OBC_in_TM_msg_type, incoming_telecommand_data, sizeof(uint8_t));
-
-  if(OBC_in_TM_msg_type == TC_C2_DATA_MSG){
-    logMessage(true, "OnTelecommandReceive", "Telecommand C2 Data Message Received");
+  // OPTIMIZED: Check message type inline without intermediate variable
+  if(*(uint8_t*)incoming_telecommand_data == TC_C2_DATA_MSG){
+    // OPTIMIZED: Direct memcpy without type checking - we know it's TC_C2_DATA_MSG
     memcpy(&OBC_in_telecommand_data, incoming_telecommand_data, sizeof(telecommand_data_t));
     OBC_TC_last_received_data_type = TC_C2_DATA_MSG;
     OBC_TC_received_data_ready = true;
-  }
-  else {
-    logMessage(true, "OnTelecommandReceive", "Unknown Telecommand Message Type Received");
-  }
-
-  // logMessage(true, "OnTelecommandReceive", "Telecommand received -----------------------");
-  // logMessage(true, "OnTelecommandReceive", "Bytes received: %d", len);
-  // logMessage(true, "OnTelecommandReceive", "Command: %d", OBC_in_telecommand_data.Command);
-  // logMessage(true, "OnTelecommandReceive", "Joystick_X: %d", OBC_in_telecommand_data.Joystick_X);
-  // logMessage(true, "OnTelecommandReceive", "Joystick_Y: %d", OBC_in_telecommand_data.Joystick_Y);
-  // logMessage(true, "OnTelecommandReceive", "Encoder_Pos: %d", OBC_in_telecommand_data.Encoder_Pos);
-  // logMessage(true, "OnTelecommandReceive", "Flags: %d", OBC_in_telecommand_data.flags);
-  // logMessage(true, "OnTelecommandReceive", "------------------------------------------");
-
-  // Immediately process high-priority flags from the telecommand
-  if(OBC_TC_received_data_ready) {
-    bool emergency_stop = get_flag(OBC_in_telecommand_data.flags, EMERGENCY_STOP_BIT);
-    bool armed = get_flag(OBC_in_telecommand_data.flags, ARMED_BIT);
-
-    if (emergency_stop) {
-        if (xr4_system_context.system_state != XR4_STATE_EMERGENCY_STOP) {
-            logMessage(true, "OnTelecommandReceive", "EMERGENCY STOP received - Forcing EMERGENCY_STOP state.");
-            SN_StatusPanel__SetStatusLedState(Blink_Red); // Immediate visual feedback
-            SN_Motors_Stop();
-            xr4_system_context.system_state = XR4_STATE_EMERGENCY_STOP;
-        }
-    } else if (!armed) {
-        if (xr4_system_context.system_state == XR4_STATE_ARMED) {
-            logMessage(true, "OnTelecommandReceive", "DISARM command received - Forcing WAITING_FOR_ARM state.");
-            SN_StatusPanel__SetStatusLedState(Moving_Back_Forth); // Immediate visual feedback
-            SN_Motors_Stop();
-            xr4_system_context.system_state = XR4_STATE_WAITING_FOR_ARM;
-        }
+    
+    // LATENCY CRITICAL: Process motor commands IMMEDIATELY in ISR for fastest response
+    // This bypasses the main loop entirely for time-critical motor control
+    if(!xr4_system_context.Emergency_Stop && xr4_system_context.Armed) {
+      // Inline joystick mapping for zero-latency motor response
+      int16_t raw_x = (int16_t)OBC_in_telecommand_data.Joystick_X - 2117;
+      int16_t throttle = (abs(raw_x) < 50) ? 0 : (int16_t)(((int32_t)OBC_in_telecommand_data.Joystick_X * 200) / 4095) - 100;
+      
+      int16_t raw_y = (int16_t)OBC_in_telecommand_data.Joystick_Y - 2000;
+      int16_t steering = (abs(raw_y) < 50) ? 0 : (int16_t)(((int32_t)OBC_in_telecommand_data.Joystick_Y * 200) / 4095) - 100;
+      
+      // Differential drive calculation (steering inverted: right stick = right turn)
+      int16_t leftSpeed = throttle - steering;
+      int16_t rightSpeed = throttle + steering;
+      
+      // Clamp
+      if (leftSpeed > 100) leftSpeed = 100;
+      else if (leftSpeed < -100) leftSpeed = -100;
+      if (rightSpeed > 100) rightSpeed = 100;
+      else if (rightSpeed < -100) rightSpeed = -100;
+      
+      // Drive motors IMMEDIATELY - no waiting for main loop!
+      SN_Motors_Drive(leftSpeed, rightSpeed);
+    } else {
+      // Safety: Stop motors if ESTOP or disarmed
+      SN_Motors_Drive(0, 0);
+    }
+    
+    // LATENCY CRITICAL: Handle headlights IMMEDIATELY as well
+    // Extract headlights flag directly from telecommand flags
+    bool headlights_on = (OBC_in_telecommand_data.flags >> 1) & 0x01;  // Bit 1 is headlights
+    if(headlights_on) {
+      SN_StatusPanel__ControlHeadlights(true);
+    } else {
+      SN_StatusPanel__ControlHeadlights(false);
     }
   }
+
+  // Main loop will still update context for other peripherals (sensors, telemetry, etc.)
 }
 
 #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
@@ -468,28 +460,20 @@ void OnTelemetryReceive(const uint8_t * mac, const uint8_t *incoming_telemetry_d
   memcpy(&CTU_in_TM_msg_type, incoming_telemetry_data, sizeof(uint8_t));
 
   if(CTU_in_TM_msg_type == TM_GPS_DATA_MSG){
-    logMessage(true, "OnTelemetryReceive", "Telemetry GPS Data Message Received");
     memcpy(&CTU_in_TM_GPS_data, incoming_telemetry_data, sizeof(telemetry_GPS_data_t));
     CTU_TM_last_received_data_type = TM_GPS_DATA_MSG;
     CTU_TM_received_data_ready = true;
   }
   else if(CTU_in_TM_msg_type == TM_IMU_DATA_MSG){
-    logMessage(true, "OnTelemetryReceive", "Telemetry IMU Data Message Received");
     memcpy(&CTU_in_TM_IMU_data, incoming_telemetry_data, sizeof(telemetry_IMU_data_t));
     CTU_TM_last_received_data_type = TM_IMU_DATA_MSG;
     CTU_TM_received_data_ready = true;
   }
   else if(CTU_in_TM_msg_type == TM_HK_DATA_MSG){
-    logMessage(true, "OnTelemetryReceive", "Telemetry HK Data Message Received");
     memcpy(&CTU_in_TM_HK_data, incoming_telemetry_data, sizeof(telemetry_HK_data_t));
     CTU_TM_last_received_data_type = TM_HK_DATA_MSG;
     CTU_TM_received_data_ready = true;
   }
-  else {
-    logMessage(true, "OnTelemetryReceive", "Unknown Telemetry Message Type Received");
-    return;
-  }
-  logMessage(true, "OnTelemetryReceive", "Bytes received: %d", len);
   
 }
 #endif

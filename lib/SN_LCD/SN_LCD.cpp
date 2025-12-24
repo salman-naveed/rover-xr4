@@ -383,10 +383,10 @@ void SN_LCD_Init(){
         lcd_state.blink_state = false;
         lcd_state.scroll_offset = 0;
         
-        // Show startup splash
+        // Show startup splash with firmware version
         SN_LCD_Clear();
         printCentered(1, "ROVER XR-4");
-        printCentered(2, "Initializing...");
+        printCentered(2, FIRMWARE_VERSION_STRING);
         
         delay(1500); // Brief startup display
         

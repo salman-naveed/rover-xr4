@@ -11,6 +11,8 @@
 #if SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
 #include <SN_Switches.h>
 #include <SN_LCD.h>
+#elif SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
+#include <SN_Sensors.h>
 #endif
 
 #include <stdint.h>
@@ -181,20 +183,103 @@ void SN_OBC_ExecuteCommands() {
 }
 
 void SN_OBC_DrivingHandler() {
-  if(EMERGENCY_STOP_ACTIVE || !ARMED) {
-    // Stop the motors if emergency stop is active
+  // Fast path: check ESTOP/ARM first
+  if(xr4_system_context.Emergency_Stop || !xr4_system_context.Armed) {
     SN_Motors_Drive(0, 0);
     return;
   }
-  // Drive the motors based on joystick values
-  JoystickMappedValues_t joystick_values;
-  joystick_values = SN_Joystick_OBC_MapADCValues(xr4_system_context.Joystick_X, xr4_system_context.Joystick_Y);
-  SN_Motors_Drive(joystick_values.joystick_x_mapped_val, joystick_values.joystick_y_mapped_val);
+  
+  // PERFORMANCE OPTIMIZED: Inline joystick mapping to avoid function call overhead
+  // X-axis (Forward/Backward) with deadband
+  int16_t throttle;
+  int16_t raw_x = (int16_t)xr4_system_context.Joystick_X - 2117;  // Center around neutral
+  if (raw_x > -50 && raw_x < 50) {
+    throttle = 0;  // Deadband
+  } else {
+    // Fast map: (raw - min) * (out_max - out_min) / (in_max - in_min) + out_min
+    throttle = (int16_t)(((int32_t)xr4_system_context.Joystick_X * 200) / 4095) - 100;
+    if (throttle > 100) throttle = 100;
+    if (throttle < -100) throttle = -100;
+  }
+  
+  // Y-axis (Left/Right steering) with deadband
+  int16_t steering;
+  int16_t raw_y = (int16_t)xr4_system_context.Joystick_Y - 2000;  // Center around neutral
+  if (raw_y > -50 && raw_y < 50) {
+    steering = 0;  // Deadband
+  } else {
+    steering = (int16_t)(((int32_t)xr4_system_context.Joystick_Y * 200) / 4095) - 100;
+    if (steering > 100) steering = 100;
+    if (steering < -100) steering = -100;
+  }
+  
+  // STEERING DIRECTION FIX:
+  // If joystick LEFT makes left motors go forward (wrong direction),
+  // uncomment the next line to invert steering:
+  // steering = -steering;
+  
+  // Differential drive calculation (optimized with single clamp operation)
+  // Steering inverted: right stick = right turn
+  int16_t leftSpeed = throttle - steering;
+  int16_t rightSpeed = throttle + steering;
+  
+  // Clamp both in single operation
+  if (leftSpeed > 100) leftSpeed = 100;
+  else if (leftSpeed < -100) leftSpeed = -100;
+  if (rightSpeed > 100) rightSpeed = 100;
+  else if (rightSpeed < -100) rightSpeed = -100;
+  
+  SN_Motors_Drive(leftSpeed, rightSpeed);
+}
 
+void SN_OBC_ReadSensors() {
+  // Throttle sensor reading to avoid blocking - read every 250ms
+  static unsigned long lastSensorRead = 0;
+  unsigned long currentTime = millis();
+  
+  if (currentTime - lastSensorRead < 250) {
+    return; // Skip this iteration
+  }
+  lastSensorRead = currentTime;
+  
+  // Read ADC sensors (battery voltage, current, etc.)
+  xr4_system_context.Main_Bus_V = SN_Sensors_ADCGetParameterValue(ADC_CHANN_MAIN_BUS_VOLTAGE);
+  xr4_system_context.Main_Bus_I = SN_Sensors_ADCGetParameterValue(ADC_CHANN_MAIN_BUS_CURRENT);
+  
+  // Read temperature sensor (can be slow)
+  xr4_system_context.temp = SN_Sensors_GetBatteryTemperature();
+  
+  // TODO: Add IMU reading here when SN_USE_IMU is enabled
+  // For now, initialize IMU values to zero if not implemented
+  // xr4_system_context.Gyro_X = 0.0;
+  // xr4_system_context.Gyro_Y = 0.0;
+  // xr4_system_context.Gyro_Z = 0.0;
+  // xr4_system_context.Acc_X = 0.0;
+  // xr4_system_context.Acc_Y = 0.0;
+  // xr4_system_context.Acc_Z = 0.0;
+  
+  // RSSI is updated in ESP-NOW receive callback
+  // GPS is updated independently via ticker in SN_GPS module
 }
 
 // OBC Handler
 void SN_OBC_MainHandler(){
+  // Watchdog: Check if we're receiving telecommands
+  static unsigned long lastTelecommandTime = 0;
+  static bool watchdogActive = false;
+  
+  if (OBC_TC_received_data_ready) {
+    lastTelecommandTime = millis();
+    watchdogActive = false;
+  }
+  
+  // If no telecommand for 2 seconds, enter safe mode
+  if (millis() - lastTelecommandTime > 2000 && lastTelecommandTime > 0) {
+    if (!watchdogActive) {
+      watchdogActive = true;
+    }
+    SN_Motors_Stop(); // Safety: stop motors if no communication
+  }
 
   // Update OBC context with received telecommand data, which is received from CTU and assigned to OBC_in_telecommand_data using OnTelecommandReceive() callback
   SN_Telecommand_updateContext(OBC_in_telecommand_data); 
@@ -202,8 +287,13 @@ void SN_OBC_MainHandler(){
   // Execute telecommands received from CTU
   SN_OBC_ExecuteCommands();
 
-  // Execute driving commands received from CTU
-  SN_OBC_DrivingHandler();
+  // Execute driving commands received from CTU (only if not in watchdog safe mode)
+  if (!watchdogActive) {
+    SN_OBC_DrivingHandler();
+  }
+
+  // Read sensors and update context
+  SN_OBC_ReadSensors();
 
   // Update outgoing telemetry data struct using the updated context
   SN_Telemetry_updateStruct(xr4_system_context);

@@ -88,7 +88,7 @@ void SN_Telemetry_updateContext(uint8_t CTU_TM_last_received_data_type);
 
 void SN_Telemetry_updateStruct(xr4_system_context_t context);
 
-void SN_Telecommand_updateContext(telecommand_data_t OBC_in_telecommand_data);
+void SN_Telecommand_updateContext(const telecommand_data_t& OBC_in_telecommand_data);
 
 void SN_Telemetry_updateStruct(xr4_system_context_t context);
 
