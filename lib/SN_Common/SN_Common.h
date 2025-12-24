@@ -3,7 +3,51 @@
 
 #include <Arduino.h>
 
+// ============================================================================
+// FIRMWARE VERSION INFORMATION
+// ============================================================================
+// Simple versioning scheme: MAJOR.MINOR.PATCH
+// - MAJOR: Breaking changes, major feature additions
+// - MINOR: New features, improvements (backward compatible)
+// - PATCH: Bug fixes, minor tweaks
+// 
+// Change Log:
+// v1.0.0 - Initial stable release
+// v1.1.0 - Ultra-low latency optimizations (ISR motor control, WiFi tuning)
+//        - Motor speed optimization (PWM frequency tuning)
+//        - GPIO12 strapping pin fix
+//        - Differential drive steering fix
+// ============================================================================
 
+#define FIRMWARE_VERSION_MAJOR 1
+#define FIRMWARE_VERSION_MINOR 1
+#define FIRMWARE_VERSION_PATCH 0
+
+// Auto-generated version string
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+#define FIRMWARE_VERSION_STRING "v" TOSTRING(FIRMWARE_VERSION_MAJOR) "." TOSTRING(FIRMWARE_VERSION_MINOR) "." TOSTRING(FIRMWARE_VERSION_PATCH)
+
+// Board-specific version identifiers
+#if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
+  #define FIRMWARE_NAME "XR4-OBC"
+  #define FIRMWARE_FULL_NAME "XR4 On-Board Computer"
+#elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
+  #define FIRMWARE_NAME "XR4-CTU"
+  #define FIRMWARE_FULL_NAME "XR4 Control & Telemetry Unit"
+#else
+  #define FIRMWARE_NAME "XR4-UNKNOWN"
+  #define FIRMWARE_FULL_NAME "XR4 Unknown Board"
+#endif
+
+// Complete firmware identification string
+#define FIRMWARE_ID FIRMWARE_NAME " " FIRMWARE_VERSION_STRING
+
+// Build date/time (automatically set at compile time)
+#define FIRMWARE_BUILD_DATE __DATE__
+#define FIRMWARE_BUILD_TIME __TIME__
+
+// ============================================================================
 
 // Device states for state machine
 #define XR4_STATE_JUST_POWERED_ON 0
