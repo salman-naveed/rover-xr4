@@ -1,4 +1,17 @@
+#ifndef SN_SENSORS_H
+#define SN_SENSORS_H
 
+#include <Arduino.h>
+#include <SN_XR_Board_Types.h>
+
+// Sensor feature flags - can be overridden in platformio.ini build_flags
+#ifndef SN_USE_TEMPERATURE_SENSOR
+#define SN_USE_TEMPERATURE_SENSOR 1  // Enable DS18B20 temperature sensor by default
+#endif
+
+#ifndef SN_USE_IMU
+#define SN_USE_IMU 1  // Enable MPU6050 IMU by default
+#endif
 
 #define ADC_CHANN_MAIN_BUS_CURRENT 0
 #define ADC_CHANN_MAIN_BUS_VOLTAGE 1
@@ -13,6 +26,7 @@ int16_t SN_Sensors_ADCReadChannel(uint8_t channel);
 float SN_Sensors_ADCGetParameterValue(uint8_t channel);
 float SN_Sensors_GetBatteryTemperature();
 void SN_Sensors_Init();
+void SN_Sensors_MPU_Init();
 
 
 
@@ -44,3 +58,5 @@ typedef struct s_SN_MPU_Sensor SN_MPU_Sensor;
 #endif // SN_USE_IMU
 
 #endif // SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
+
+#endif // SN_SENSORS_H

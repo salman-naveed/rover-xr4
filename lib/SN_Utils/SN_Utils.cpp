@@ -431,7 +431,7 @@ String formatDate(DateTime dateTime) {
 
 // Format [DD/MM/YYYY]
 String formatDateShort(DateTime dateTime) {
-    char buf[11];  // Update the buffer size to accommodate the shortened date string
+    char buf[16];  // Increased buffer size to 16 to ensure sufficient space (DD/MM/YYYY = 10 chars + null = 11, extra buffer for safety)
 
     sprintf(buf, "%02d/%02d/%04d", dateTime.day(), dateTime.month(), dateTime.year());
 
