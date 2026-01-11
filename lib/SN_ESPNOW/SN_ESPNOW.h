@@ -29,23 +29,22 @@ typedef struct telemetry_GPS_data {
 
 typedef struct telemetry_IMU_data {
     uint8_t msg_type = TM_IMU_DATA_MSG;
-    float Gyro_X;
-    float Gyro_Y;
-    float Gyro_Z;
-    float Acc_X;
-    float Acc_Y;
-    float Acc_Z;
-    float Mag_X;
-    float Mag_Y;
-    float Mag_Z;
+    
+    // Orientation data (tilt-compensated, intuitive for operators)
+    float Heading_Degrees;      // Compass heading 0-360°
+    char Heading_Cardinal[3];   // Cardinal direction (N, NE, E, SE, S, SW, W, NW)
+    float Pitch_Degrees;        // Pitch angle (nose up/down)
+    float Roll_Degrees;         // Roll angle (left/right tilt)
 } telemetry_IMU_data_t;
 
 typedef struct telemetry_HK_data {
     uint8_t msg_type = TM_HK_DATA_MSG;
     float Main_Bus_V;
     float Main_Bus_I;
+    float Bus_5V;           // 5V rail voltage
+    float Bus_3V3;          // 3.3V rail voltage
     float temp;
-    float OBC_RSSI;
+    int16_t OBC_RSSI;
 } telemetry_HK_data_t;
 
 // Create a struct_message to hold telecommand data (CTU --> OBC)
@@ -59,7 +58,7 @@ typedef struct telecommand_data {
     uint16_t Joystick_Y;
     uint16_t Encoder_Pos;
     uint16_t flags;         // Bytes structure (8-bit data): | Emergency_Stop | Armed | Button_A | Button_B | Button_C | Button_D | Headlights_On | Buzzer |
-    uint16_t CTU_RSSI;
+    int16_t CTU_RSSI;       // RSSI value in dBm (negative, e.g., -30 to -90)
 } telecommand_data_t;
 
 // bool OBC_TC_received_data_ready;
@@ -97,3 +96,12 @@ void SN_Telecommand_updateStruct(xr4_system_context_t context);
 // --- Helper for consistent cleanup ---
 void SN_ESPNOW_DeinitOnError();
 
+// --- Connection status check (CTU only) ---
+#if SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
+bool SN_ESPNOW_IsConnected();
+
+// --- Diagnostic counters (CTU only) ---
+uint32_t SN_ESPNOW_GetTelemetryPacketsReceived();
+uint32_t SN_ESPNOW_GetTelecommandPacketsSent();
+uint32_t SN_ESPNOW_GetTelecommandSendFailures();
+#endif

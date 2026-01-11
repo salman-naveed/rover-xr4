@@ -9,6 +9,7 @@
 #include <SN_WiFi.h>
 #include <SN_XR_Board_Types.h>
 #include <SN_Motors.h>
+#include <SN_Handler.h>
 
 extern xr4_system_context_t xr4_system_context;
 
@@ -67,6 +68,15 @@ esp_now_peer_info_t peerInfo;
   telemetry_GPS_data_t CTU_in_TM_GPS_data;
   telemetry_IMU_data_t CTU_in_TM_IMU_data;
   telemetry_HK_data_t CTU_in_TM_HK_data;
+
+  // Connection timeout tracking
+  static unsigned long last_telemetry_received_time = 0;
+  #define ESPNOW_TIMEOUT_MS 1000  // 1 second timeout
+
+  // Diagnostic counters
+  static uint32_t telemetry_packets_received = 0;
+  static uint32_t telecommand_packets_sent = 0;
+  static uint32_t telecommand_send_failures = 0;
 
 #endif
 
@@ -252,6 +262,7 @@ void SN_ESPNOW_SendTelecommand(uint8_t TC_out_msg_type){
 
     if(TC_out_msg_type == TC_C2_DATA_MSG){
       result = esp_now_send(broadcastAddress, (uint8_t *) &CTU_out_telecommand_data, sizeof(telecommand_data_t));
+      telecommand_packets_sent++;  // Diagnostic counter
     }
 }
 #endif
@@ -277,6 +288,7 @@ void OnTelecommandSend(const uint8_t *mac_addr, esp_now_send_status_t status) {
   }
   else{
     success = "Delivery Fail";
+    telecommand_send_failures++;  // Diagnostic counter
   }
 }
 #endif
@@ -290,18 +302,17 @@ void SN_Telemetry_updateStruct(xr4_system_context_t context){
   OBC_out_TM_GPS_data.GPS_time = context.GPS_time;
   OBC_out_TM_GPS_data.GPS_fix = context.GPS_fix;
 
-  OBC_out_TM_IMU_data.Acc_X = context.Acc_X;
-  OBC_out_TM_IMU_data.Acc_Y = context.Acc_Y;
-  OBC_out_TM_IMU_data.Acc_Z = context.Acc_Z;
-  OBC_out_TM_IMU_data.Gyro_X = context.Gyro_X;
-  OBC_out_TM_IMU_data.Gyro_Y = context.Gyro_Y;
-  OBC_out_TM_IMU_data.Gyro_Z = context.Gyro_Z;
-  OBC_out_TM_IMU_data.Mag_X = context.Mag_X;
-  OBC_out_TM_IMU_data.Mag_Y = context.Mag_Y;
-  OBC_out_TM_IMU_data.Mag_Z = context.Mag_Z;
+  // Update orientation data (heading, pitch, roll)
+  OBC_out_TM_IMU_data.Heading_Degrees = context.Heading_Degrees;
+  strncpy(OBC_out_TM_IMU_data.Heading_Cardinal, context.Heading_Cardinal, 2);
+  OBC_out_TM_IMU_data.Heading_Cardinal[2] = '\0';
+  OBC_out_TM_IMU_data.Pitch_Degrees = context.Pitch_Degrees;
+  OBC_out_TM_IMU_data.Roll_Degrees = context.Roll_Degrees;
 
   OBC_out_TM_HK_data.Main_Bus_V = context.Main_Bus_V;
   OBC_out_TM_HK_data.Main_Bus_I = context.Main_Bus_I;
+  OBC_out_TM_HK_data.Bus_5V = context.Bus_5V;
+  OBC_out_TM_HK_data.Bus_3V3 = context.Bus_3V3;
   OBC_out_TM_HK_data.OBC_RSSI = context.OBC_RSSI;
   OBC_out_TM_HK_data.temp = context.temp;
 }
@@ -365,20 +376,19 @@ void SN_Telemetry_updateContext(uint8_t CTU_TM_last_received_data_type){
         break;
 
       case TM_IMU_DATA_MSG:
-        xr4_system_context.Gyro_X = CTU_in_TM_IMU_data.Gyro_X;
-        xr4_system_context.Gyro_Y = CTU_in_TM_IMU_data.Gyro_Y;
-        xr4_system_context.Gyro_Z = CTU_in_TM_IMU_data.Gyro_Z;
-        xr4_system_context.Acc_X = CTU_in_TM_IMU_data.Acc_X;
-        xr4_system_context.Acc_Y = CTU_in_TM_IMU_data.Acc_Y;
-        xr4_system_context.Acc_Z = CTU_in_TM_IMU_data.Acc_Z;
-        xr4_system_context.Mag_X = CTU_in_TM_IMU_data.Mag_X;
-        xr4_system_context.Mag_Y = CTU_in_TM_IMU_data.Mag_Y;
-        xr4_system_context.Mag_Z = CTU_in_TM_IMU_data.Mag_Z;
+        // Update orientation data (heading, pitch, roll)
+        xr4_system_context.Heading_Degrees = CTU_in_TM_IMU_data.Heading_Degrees;
+        strncpy(xr4_system_context.Heading_Cardinal, CTU_in_TM_IMU_data.Heading_Cardinal, 2);
+        xr4_system_context.Heading_Cardinal[2] = '\0';
+        xr4_system_context.Pitch_Degrees = CTU_in_TM_IMU_data.Pitch_Degrees;
+        xr4_system_context.Roll_Degrees = CTU_in_TM_IMU_data.Roll_Degrees;
         break;
 
       case TM_HK_DATA_MSG:
         xr4_system_context.Main_Bus_V = CTU_in_TM_HK_data.Main_Bus_V;
         xr4_system_context.Main_Bus_I = CTU_in_TM_HK_data.Main_Bus_I;
+        xr4_system_context.Bus_5V = CTU_in_TM_HK_data.Bus_5V;
+        xr4_system_context.Bus_3V3 = CTU_in_TM_HK_data.Bus_3V3;
         xr4_system_context.temp = CTU_in_TM_HK_data.temp;
         xr4_system_context.OBC_RSSI = CTU_in_TM_HK_data.OBC_RSSI;
         break;
@@ -406,33 +416,37 @@ void OnTelecommandReceive(const uint8_t * mac, const uint8_t *incoming_telecomma
     memcpy(&OBC_in_telecommand_data, incoming_telecommand_data, sizeof(telecommand_data_t));
     OBC_TC_last_received_data_type = TC_C2_DATA_MSG;
     OBC_TC_received_data_ready = true;
+
+    SN_OBC_DrivingHandler();
     
-    // LATENCY CRITICAL: Process motor commands IMMEDIATELY in ISR for fastest response
-    // This bypasses the main loop entirely for time-critical motor control
-    if(!xr4_system_context.Emergency_Stop && xr4_system_context.Armed) {
-      // Inline joystick mapping for zero-latency motor response
-      int16_t raw_x = (int16_t)OBC_in_telecommand_data.Joystick_X - 2117;
-      int16_t throttle = (abs(raw_x) < 50) ? 0 : (int16_t)(((int32_t)OBC_in_telecommand_data.Joystick_X * 200) / 4095) - 100;
+    // // LATENCY CRITICAL: Process motor commands IMMEDIATELY in ISR for fastest response
+    // // This bypasses the main loop entirely for time-critical motor control
+    // if(!xr4_system_context.Emergency_Stop && xr4_system_context.Armed) {
+    //   // Inline joystick mapping for zero-latency motor response
+    //   int16_t raw_x = (int16_t)OBC_in_telecommand_data.Joystick_X - 2117;
+    //   int16_t throttle = (abs(raw_x) < 50) ? 0 : (int16_t)(((int32_t)OBC_in_telecommand_data.Joystick_X * 200) / 4095) - 100;
       
-      int16_t raw_y = (int16_t)OBC_in_telecommand_data.Joystick_Y - 2000;
-      int16_t steering = (abs(raw_y) < 50) ? 0 : (int16_t)(((int32_t)OBC_in_telecommand_data.Joystick_Y * 200) / 4095) - 100;
+    //   int16_t raw_y = (int16_t)OBC_in_telecommand_data.Joystick_Y - 2000;
+    //   int16_t steering = (abs(raw_y) < 50) ? 0 : (int16_t)(((int32_t)OBC_in_telecommand_data.Joystick_Y * 200) / 4095) - 100;
       
-      // Differential drive calculation (steering inverted: right stick = right turn)
-      int16_t leftSpeed = throttle - steering;
-      int16_t rightSpeed = throttle + steering;
+    //   // Differential drive calculation
+    //   // When joystick LEFT: steering is negative → left motors slower, right motors faster → turn LEFT
+    //   // When joystick RIGHT: steering is positive → left motors faster, right motors slower → turn RIGHT
+    //   int16_t leftSpeed = throttle + steering;
+    //   int16_t rightSpeed = throttle - steering;
       
-      // Clamp
-      if (leftSpeed > 100) leftSpeed = 100;
-      else if (leftSpeed < -100) leftSpeed = -100;
-      if (rightSpeed > 100) rightSpeed = 100;
-      else if (rightSpeed < -100) rightSpeed = -100;
+    //   // Clamp
+    //   if (leftSpeed > 100) leftSpeed = 100;
+    //   else if (leftSpeed < -100) leftSpeed = -100;
+    //   if (rightSpeed > 100) rightSpeed = 100;
+    //   else if (rightSpeed < -100) rightSpeed = -100;
       
-      // Drive motors IMMEDIATELY - no waiting for main loop!
-      SN_Motors_Drive(leftSpeed, rightSpeed);
-    } else {
-      // Safety: Stop motors if ESTOP or disarmed
-      SN_Motors_Drive(0, 0);
-    }
+    //   // Drive motors IMMEDIATELY - no waiting for main loop!
+    //   SN_Motors_Drive(leftSpeed, rightSpeed);
+    // } else {
+    //   // Safety: Stop motors if ESTOP or disarmed
+    //   SN_Motors_Drive(0, 0);
+    // }
     
     // LATENCY CRITICAL: Handle headlights IMMEDIATELY as well
     // Extract headlights flag directly from telecommand flags
@@ -450,6 +464,10 @@ void OnTelecommandReceive(const uint8_t * mac, const uint8_t *incoming_telecomma
 #elif SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
 // Callback when a Telemetry data message is received by CTU
 void OnTelemetryReceive(const uint8_t * mac, const uint8_t *incoming_telemetry_data, int len) {
+
+  // Track last received time for connection timeout detection
+  last_telemetry_received_time = millis();
+  telemetry_packets_received++;  // Diagnostic counter
 
   wifi_pkt_rx_ctrl_t *rx_ctrl = (wifi_pkt_rx_ctrl_t *)incoming_telemetry_data;
   int data_len = len - rx_ctrl->sig_len;
@@ -475,6 +493,34 @@ void OnTelemetryReceive(const uint8_t * mac, const uint8_t *incoming_telemetry_d
     CTU_TM_received_data_ready = true;
   }
   
+}
+#endif
+// --------------------------------------------------------
+
+// ----------------- Connection Status Check (CTU Only) -----------------
+#if SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
+/**
+ * Check if ESP-NOW connection is active
+ * Returns true if telemetry packets received within timeout period
+ */
+bool SN_ESPNOW_IsConnected() {
+  // Check if we've received telemetry recently
+  return (millis() - last_telemetry_received_time) < ESPNOW_TIMEOUT_MS;
+}
+
+/**
+ * Get diagnostic counter values
+ */
+uint32_t SN_ESPNOW_GetTelemetryPacketsReceived() {
+  return telemetry_packets_received;
+}
+
+uint32_t SN_ESPNOW_GetTelecommandPacketsSent() {
+  return telecommand_packets_sent;
+}
+
+uint32_t SN_ESPNOW_GetTelecommandSendFailures() {
+  return telecommand_send_failures;
 }
 #endif
 // --------------------------------------------------------
