@@ -72,21 +72,17 @@ typedef struct system_context {
     double GPS_time;
     bool GPS_fix;
 
-    float Gyro_X;
-    float Gyro_Y;
-    float Gyro_Z;
+    // Orientation data (computed from IMU + Magnetometer fusion)
+    float Heading_Degrees;      // Compass heading 0-360° (tilt-compensated)
+    char Heading_Cardinal[3];   // Cardinal direction (N, NE, E, SE, S, SW, W, NW)
+    float Pitch_Degrees;        // Pitch angle (nose up/down)
+    float Roll_Degrees;         // Roll angle (left/right tilt)
     
-    float Acc_X;
-    float Acc_Y;
-    float Acc_Z;
-    
-    float Mag_X;
-    float Mag_Y;
-    float Mag_Z;
-    
+    // Power & Thermal
     float Main_Bus_V;
     float Main_Bus_I;
-    
+    float Bus_5V;           // 5V rail voltage
+    float Bus_3V3;          // 3.3V rail voltage
     float temp;
     float OBC_RSSI;
 
@@ -95,7 +91,7 @@ typedef struct system_context {
     uint16_t Joystick_X;    // Joystick X-axis raw ADC value
     uint16_t Joystick_Y;    // Joystick Y-axis raw ADC value
     uint16_t Encoder_Pos;
-    uint16_t CTU_RSSI;
+    int16_t CTU_RSSI;       // RSSI value (negative dBm, e.g., -30 to -90)
 
     bool Emergency_Stop;
     bool Armed;
