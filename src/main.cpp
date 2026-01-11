@@ -68,6 +68,10 @@ void setup() {
   #elif SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
     SN_Sensors_Init(); // Init Sensors (ADC, MPU6050, DS18B20)
     SN_Motors_Init(); // Init Motors
+    
+    // Start background sensor reading task (IMU/MAG) - Zero latency!
+    SN_OBC_StartBackgroundSensorTask();
+    
     bool gps_ok = SN_GPS_Init(); // Init GPS - capture return but don't block on it
     if (!gps_ok) {
         logMessage(true, "Main Logger", "GPS init returned false - continuing without GPS");
