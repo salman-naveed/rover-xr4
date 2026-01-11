@@ -8,6 +8,7 @@
 #include <SN_LCD.h>
 #include <SN_Logger.h>
 #include <SN_Common.h>
+#include <SN_ESPNOW.h>  // For connection status check
 
 #if SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
 
@@ -22,7 +23,7 @@
 // ========================================
 // LCD Update Timing Configuration
 // ========================================
-#define LCD_DEFAULT_UPDATE_INTERVAL_MS 100    // Update every 100ms (10Hz)
+#define LCD_DEFAULT_UPDATE_INTERVAL_MS 200    // Update every 200ms (5Hz) - optimized for reduced I2C congestion
 #define LCD_BLINK_INTERVAL_MS 500             // Blink rate for indicators
 
 // ========================================
@@ -141,8 +142,11 @@ void printVoltage(int col, int row, float voltage) {
  */
 void printCurrent(int col, int row, float current) {
     lcd.setCursor(col, row);
-    lcd.print(current, 2);
-    lcd.print("A");
+    
+    // Print with padding to clear old digits (format: "XX.XXA  " - 7 chars total)
+    char buffer[8];
+    snprintf(buffer, sizeof(buffer), "%5.2fA ", current);
+    lcd.print(buffer);
 }
 
 /**
@@ -173,18 +177,38 @@ void printGPSCoord(int col, int row, double coord) {
 
 /**
  * Render STATUS page (Page 0)
- * Shows: System state, ARM status, E-STOP, ESP-NOW connection
+ * Shows: System state, ARM status, E-STOP, ESP-NOW connection, Battery warning
  */
 void renderStatusPage(xr4_system_context_t* ctx) {
     // Row 0: Title
     lcd.setCursor(0, 0);
-    lcd.print("=== ROVER XR-4 === ");  // 20 chars total
+    lcd.print(" === ROVER XR-4 === ");  // 20 chars total
     
-    // Row 1: State and ARM status  
+    // Row 1: State and Battery Warning
     lcd.setCursor(0, 1);
-    lcd.print("State: ");
-    lcd.print(getStateString(ctx->system_state));
-    lcd.print("           ");  // Clear remaining chars
+    
+    // Check battery voltage and show warning if critical/low
+    // For 3S LiPo: Critical < 9.0V (3.0V/cell), Warning < 10.5V (3.5V/cell)
+    if (ctx->Main_Bus_V > 0.1 && ctx->Main_Bus_V < 9.0) {
+        // Critical battery voltage
+        lcd.print("BAT CRITICAL! ");
+        if (lcd_state.blink_state) {
+            lcd.print(ctx->Main_Bus_V, 1);
+            lcd.print("V");
+        } else {
+            lcd.print("     ");  // Blink the voltage
+        }
+    } else if (ctx->Main_Bus_V > 0.1 && ctx->Main_Bus_V < 10.5) {
+        // Low battery voltage
+        lcd.print("BAT LOW! ");
+        lcd.print(ctx->Main_Bus_V, 1);
+        lcd.print("V    ");
+    } else {
+        // Normal - show state
+        lcd.print("State: ");
+        lcd.print(getStateString(ctx->system_state));
+        lcd.print("           ");  // Clear remaining chars
+    }
     
     // Row 2: E-STOP and ARM indicators
     lcd.setCursor(0, 2);
@@ -201,19 +225,28 @@ void renderStatusPage(xr4_system_context_t* ctx) {
     lcd.setCursor(0, 3);
     lcd.print("Link:");
     if (espnow_init_success) {
-        if (lcd_state.blink_state) {
-            lcd.print("OK ");
+        // Check if we're actually receiving data (not just initialized)
+        bool connected = SN_ESPNOW_IsConnected();
+        
+        if (connected) {
+            // Connected - show blinking OK
+            if (lcd_state.blink_state) {
+                lcd.print("OK ");
+            } else {
+                lcd.print("ok ");
+            }
+            // Show RSSI if available
+            lcd.print("OBC:");
+            if (ctx->CTU_RSSI < 0) {
+                lcd.print((int)ctx->CTU_RSSI);
+            } else {
+                lcd.print("--");
+            }
+            lcd.print("dB  ");  // Padding
         } else {
-            lcd.print("ok ");
+            // Init OK but no data received
+            lcd.print("NO DATA!    ");
         }
-        // Show RSSI if available
-        lcd.print("OBC:");
-        if (ctx->OBC_RSSI < 0) {
-            lcd.print((int)ctx->OBC_RSSI);
-        } else {
-            lcd.print("--");
-        }
-        lcd.print("dB  ");  // Padding
     } else {
         lcd.print("NO CONN      ");  // 14 chars total after "Link:"
     }
@@ -221,31 +254,61 @@ void renderStatusPage(xr4_system_context_t* ctx) {
 
 /**
  * Render TELEMETRY page (Page 1)
- * Shows: Voltage, Current, Temperature, Power
+ * Shows: Main/5V/3.3V voltage, current, and power consumption
+ * 
+ * Layout (20x4):
+ * Row 0: "    TELEMETRY      " (centered title)
+ * Row 1: "12.30V  5.10V 3.31V" (Voltages: Main, 5V, 3.3V)
+ * Row 2: " 1.00A  0.50A 0.20A" (Currents: Main, 5V, 3.3V)
+ * Row 3: "12.30W  2.55W 0.66W" (Power: Main, 5V, 3.3V)
  */
 void renderTelemetryPage(xr4_system_context_t* ctx) {
     // Row 0: Title
     printCentered(0, "TELEMETRY");
     
-    // Row 1: Voltage
+    // Row 1: All Voltages (Main, 5V, 3.3V)
     lcd.setCursor(0, 1);
-    lcd.print("Volt: ");
-    printVoltage(6, 1, ctx->Main_Bus_V);
+    // Main voltage (6 chars: "XX.XXV")
+    char vmain[7];
+    snprintf(vmain, sizeof(vmain), "%5.2fV", ctx->Main_Bus_V);
+    lcd.print(vmain);
+    lcd.print(" ");
+    // 5V voltage (6 chars: "X.XXV")
+    char v5[6];
+    snprintf(v5, sizeof(v5), "%4.2fV", ctx->Bus_5V);
+    lcd.print(v5);
+    lcd.print(" ");
+    // 3.3V voltage (5 chars: "X.XXV")
+    char v3[6];
+    snprintf(v3, sizeof(v3), "%4.2fV", ctx->Bus_3V3);
+    lcd.print(v3);
     
-    // Row 2: Current
+    // Row 2: All Currents (Main, 5V, 3.3V)
     lcd.setCursor(0, 2);
-    lcd.print("Curr: ");
-    printCurrent(6, 2, ctx->Main_Bus_I);
+    // Main current (6 chars: "X.XXA")
+    char imain[7];
+    snprintf(imain, sizeof(imain), "%5.2fA", ctx->Main_Bus_I);
+    lcd.print(imain);
+    lcd.print(" ");
+    // 5V current (6 chars: "X.XXA") - placeholder, sensor not installed
+    lcd.print(" -.--A");
+    lcd.print(" ");
+    // 3.3V current (5 chars: "X.XXA") - placeholder, sensor not installed
+    lcd.print("-.--A");
     
-    // Row 3: Temperature and Power
+    // Row 3: All Power (Main, 5V, 3.3V)
     lcd.setCursor(0, 3);
-    lcd.print("Temp:");
-    printTemperature(5, 3, ctx->temp);
-    
-    lcd.setCursor(11, 3);
-    float power = ctx->Main_Bus_V * ctx->Main_Bus_I;
-    lcd.print(power, 1);
-    lcd.print("W");
+    // Main power
+    float power_main = ctx->Main_Bus_V * ctx->Main_Bus_I;
+    char pmain[7];
+    snprintf(pmain, sizeof(pmain), "%5.2fW", power_main);
+    lcd.print(pmain);
+    lcd.print(" ");
+    // 5V power - placeholder
+    lcd.print(" -.--W");
+    lcd.print(" ");
+    // 3.3V power - placeholder
+    lcd.print("-.--W");
 }
 
 /**
@@ -283,71 +346,113 @@ void renderGPSPage(xr4_system_context_t* ctx) {
 }
 
 /**
- * Render SENSORS page (Page 3)
- * Shows: Gyro, Accelerometer, Magnetometer
+ * Render IMU page (Page 3)
+ * Shows: Orientation (Heading, Pitch, Roll)
  */
 void renderSensorsPage(xr4_system_context_t* ctx) {
     // Row 0: Title
-    printCentered(0, "SENSORS");
+    printCentered(0, "IMU");
     
-    // Row 1: Gyroscope
+    // Row 1: Heading with cardinal direction
     lcd.setCursor(0, 1);
-    lcd.print("G:");
-    lcd.print(ctx->Gyro_X, 1);
+    lcd.print("Hdg: ");
+    lcd.print((int)ctx->Heading_Degrees);
+    lcd.write(0xDF);  // Degree symbol
     lcd.print(" ");
-    lcd.print(ctx->Gyro_Y, 1);
-    lcd.print(" ");
-    lcd.print(ctx->Gyro_Z, 1);
+    lcd.print(ctx->Heading_Cardinal);
+    lcd.print("     ");  // Clear remainder
     
-    // Row 2: Accelerometer
+    // Row 2: Pitch angle
     lcd.setCursor(0, 2);
-    lcd.print("A:");
-    lcd.print(ctx->Acc_X, 1);
-    lcd.print(" ");
-    lcd.print(ctx->Acc_Y, 1);
-    lcd.print(" ");
-    lcd.print(ctx->Acc_Z, 1);
+    lcd.print("Pitch: ");
+    if (ctx->Pitch_Degrees >= 0) lcd.print("+");
+    lcd.print(ctx->Pitch_Degrees, 1);
+    lcd.write(0xDF);  // Degree symbol
+    lcd.print("    ");  // Clear remainder
     
-    // Row 3: Magnetometer
+    // Row 3: Roll angle
     lcd.setCursor(0, 3);
-    lcd.print("M:");
-    lcd.print(ctx->Mag_X, 0);
-    lcd.print(" ");
-    lcd.print(ctx->Mag_Y, 0);
-    lcd.print(" ");
-    lcd.print(ctx->Mag_Z, 0);
+    lcd.print("Roll:  ");
+    if (ctx->Roll_Degrees >= 0) lcd.print("+");
+    lcd.print(ctx->Roll_Degrees, 1);
+    lcd.write(0xDF);  // Degree symbol
+    lcd.print("    ");  // Clear remainder
 }
 
 /**
  * Render CONTROL page (Page 4)
- * Shows: Joystick position, Encoder, Switches
+ * Shows: Joystick X/Y, Headlights, Switch position, Temperature
+ * 
+ * Layout (20x4):
+ * Row 0: "JoyX:1856 JoyY:1880" (Joystick raw values)
+ * Row 1: "Hdlt:OFF  Sw:A     " (Headlights + Switch state)
+ * Row 2: "Temp:25.3°C         " (Temperature)
+ * Row 3: "                    " (Reserved/empty)
  */
 void renderControlPage(xr4_system_context_t* ctx) {
-    // Row 0: Title
-    printCentered(0, "CONTROL INPUTS");
-    
-    // Row 1: Joystick X & Y
-    lcd.setCursor(0, 1);
-    lcd.print("Joy X:");
+    // Row 0: Joystick X & Y (no title, more space)
+    lcd.setCursor(0, 0);
+    lcd.print("JoyX:");
     lcd.print(ctx->Joystick_X);
-    lcd.print("  Y:");
+    lcd.print(" JoyY:");
     lcd.print(ctx->Joystick_Y);
-    lcd.print("  ");
+    lcd.print("     ");  // Clear remainder
     
-    // Row 2: Encoder position
-    lcd.setCursor(0, 2);
-    lcd.print("Encoder: ");
-    lcd.print(ctx->Encoder_Pos);
-    lcd.print("    ");
-    
-    // Row 3: Switches status
-    lcd.setCursor(0, 3);
-    lcd.print("H:");
+    // Row 1: Headlights status
+    lcd.setCursor(0, 1);
+    lcd.print("Hdlt:");
     lcd.print(ctx->Headlights_On ? "ON " : "OFF");
-    lcd.print(" A:");
-    lcd.print(ctx->Armed ? "Y" : "N");
-    lcd.print(" E:");
-    lcd.print(ctx->Emergency_Stop ? "Y" : "N");
+    
+    // Row 1 (continued): Three-position switch status (Button A/B/C)
+    lcd.print("  Sw:");
+    if (ctx->Button_A) {
+        lcd.print("A");
+    } else if (ctx->Button_B) {
+        lcd.print("B");
+    } else if (ctx->Button_C) {
+        lcd.print("C");
+    } else {
+        lcd.print("-");  // None pressed
+    }
+    lcd.print("     ");  // Clear remainder
+    
+    // Row 2: Temperature
+    lcd.setCursor(0, 2);
+    lcd.print("Temp:");
+    printTemperature(5, 2, ctx->temp);
+    lcd.print("          ");  // Clear remainder
+    
+    // Row 3: Reserved/empty
+    lcd.setCursor(0, 3);
+    lcd.print("                    ");  // Clear entire row
+}
+
+void renderDiagnosticsPage() {
+    // Row 0: Title
+    lcd.setCursor(0, 0);
+    lcd.print("  << DIAGNOSTICS >> ");
+    
+    // Row 1: Telemetry packets received
+    lcd.setCursor(0, 1);
+    lcd.print("RX: ");
+    lcd.print(SN_ESPNOW_GetTelemetryPacketsReceived());
+    lcd.print("     ");  // Clear remainder
+    
+    // Row 2: Telecommand packets sent and failures
+    lcd.setCursor(0, 2);
+    lcd.print("TX: ");
+    lcd.print(SN_ESPNOW_GetTelecommandPacketsSent());
+    lcd.print(" Fail: ");
+    lcd.print(SN_ESPNOW_GetTelecommandSendFailures());
+    lcd.print("     ");  // Clear remainder
+    
+    // Row 3: Uptime in minutes
+    lcd.setCursor(0, 3);
+    lcd.print("Uptime: ");
+    unsigned long uptime_minutes = millis() / 60000;
+    lcd.print(uptime_minutes);
+    lcd.print(" min");
+    lcd.print("          ");  // Clear remainder
 }
 
 // ========================================
@@ -444,6 +549,9 @@ void SN_LCD_Update(xr4_system_context_t* system_context) {
         case LCD_PAGE_CONTROL:
             renderControlPage(system_context);
             break;
+        case LCD_PAGE_DIAGNOSTICS:
+            renderDiagnosticsPage();
+            break;
         default:
             lcd_state.current_page = LCD_PAGE_STATUS;
             renderStatusPage(system_context);
@@ -453,11 +561,11 @@ void SN_LCD_Update(xr4_system_context_t* system_context) {
     // Show page indicator on all pages (bottom right corner)
     // Position: "X/5" where X is current page (1-5)
     // For 20x4 display: Column 17-19 (0-indexed), Row 3
-    lcd.setCursor(17, 3);
-    lcd.print(lcd_state.current_page + 1);
-    lcd.print("/");
-    lcd.print(LCD_PAGE_COUNT);
-    lcd.print(" ");  // Clear any trailing characters
+    // lcd.setCursor(17, 3);
+    // lcd.print(lcd_state.current_page + 1);
+    // lcd.print("/");
+    // lcd.print(LCD_PAGE_COUNT);
+    // lcd.print(" ");  // Clear any trailing characters
     
     lcd_state.last_update_time = current_time;
     lcd_state.needs_redraw = false;

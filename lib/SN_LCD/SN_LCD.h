@@ -12,6 +12,7 @@ enum LCD_Page {
     LCD_PAGE_GPS,             // GPS position, fix status
     LCD_PAGE_SENSORS,         // Gyro, accelerometer, magnetometer
     LCD_PAGE_CONTROL,         // Joystick, encoder, switches
+    LCD_PAGE_DIAGNOSTICS,     // Packet counters, uptime
     LCD_PAGE_COUNT            // Total number of pages
 };
 
