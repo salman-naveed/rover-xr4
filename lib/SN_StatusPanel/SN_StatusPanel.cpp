@@ -36,6 +36,8 @@ static SemaphoreHandle_t leds_mutex = NULL;
 #define COLOR_YELLOW leds.Color(255, 255, 0)
 #define COLOR_BLACK leds.Color(0, 0, 0)
 #define COLOR_XR4 leds.Color(0, 153, 153)
+#define COLOR_WHITE leds.Color(255, 255, 255)
+#define COLOR_ORANGE leds.Color(255, 165, 0)
 
 volatile LED_State status_led_state = No_Color;
 
@@ -140,7 +142,7 @@ void SN_StatusPanel__Init() {
   leds.setBrightness(15); // Reduced brightness (was 50, range 0-255)
   leds.clear();
   leds.show();
-  Serial.println("Status Panel Initialized");
+  logMessage(true, "SN_StatusPanel", "Status Panel Initialized");
 
   xTaskCreatePinnedToCore(
       led_task,           /* Task function. */
