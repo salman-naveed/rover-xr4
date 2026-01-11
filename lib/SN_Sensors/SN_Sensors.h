@@ -13,10 +13,18 @@
 #define SN_USE_IMU 1  // Enable MPU6050 IMU by default
 #endif
 
-#define ADC_CHANN_MAIN_BUS_CURRENT 0
-#define ADC_CHANN_MAIN_BUS_VOLTAGE 1
-#define ADC_CHANN_BATTERY_TEMPERATURE 2
-#define ADC_CHANN_AUXILIARY 3
+#ifndef SN_USE_MAGNETOMETER
+#define SN_USE_MAGNETOMETER 1  // Enable QMC5883L magnetometer by default
+#endif
+
+#ifndef SN_USE_ADC
+#define SN_USE_ADC 1  // Enable ADS1115 ADC by default
+#endif
+
+#define ADC_CHANN_BUS_CURRENT_MAIN 0
+#define ADC_CHANN_BUS_VOLTAGE_MAIN 1
+#define ADC_CHANN_BUS_VOLTAGE_5V 2
+#define ADC_CHANN_BUS_VOLTAGE_3V3 3
 
 #if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 
@@ -27,6 +35,7 @@ float SN_Sensors_ADCGetParameterValue(uint8_t channel);
 float SN_Sensors_GetBatteryTemperature();
 void SN_Sensors_Init();
 void SN_Sensors_MPU_Init();
+void SN_Sensors_MAG_Init();
 
 
 
@@ -55,7 +64,40 @@ struct s_SN_MPU_Sensor {
 
 typedef struct s_SN_MPU_Sensor SN_MPU_Sensor;
 
+// External declaration of MPU sensor data
+extern SN_MPU_Sensor mpu_sensor;
+
+// Function prototypes
+void read_MPU();
+void SN_SetMPUOrientation(int orientation);
+int SN_GetMPUOrientation();
+void SN_ClearMPUCalibrationData();
+
 #endif // SN_USE_IMU
+
+#if SN_USE_MAGNETOMETER == 1
+struct s_SN_Magnetometer_Sensor {
+    int mag_x = 0;
+    int mag_y = 0;
+    int mag_z = 0;
+    int azimuth = 0;
+    float heading_degrees = 0.0;
+    char direction[3] = "N";
+};
+
+typedef struct s_SN_Magnetometer_Sensor SN_Magnetometer_Sensor;
+
+// External declaration of magnetometer sensor data
+extern SN_Magnetometer_Sensor mag_sensor;
+
+// Function prototypes
+void read_MAG();
+float computeTiltCompensatedHeading(float mag_x, float mag_y, float mag_z, 
+                                    float pitch_rad, float roll_rad);
+void SN_SetMagnetometerCalibration(int x_min, int x_max, int y_min, int y_max, int z_min, int z_max);
+void SN_SetMagnetometerSmoothing(uint8_t steps, bool advanced);
+
+#endif // SN_USE_MAGNETOMETER
 
 #endif // SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
 
