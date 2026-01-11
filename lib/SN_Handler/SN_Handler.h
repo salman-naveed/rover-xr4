@@ -11,6 +11,9 @@ void SN_OBC_DrivingHandler();
 
 void SN_OBC_ReadSensors();
 
+// Zero-latency background sensor reading using FreeRTOS task
+void SN_OBC_StartBackgroundSensorTask();
+
 void SN_CTU_MainHandler();
 
 void SN_CTU_ControlInputsHandler();

@@ -50,6 +50,138 @@ bool get_flag(uint16_t flags, uint8_t bit_position) {
     return (flags & (1 << bit_position)) != 0;
 }
 
+#if SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
+// ============================================================================
+// ZERO-LATENCY SENSOR READING - FREERTOS BACKGROUND TASK
+// ============================================================================
+// This task runs independently in the background, reading IMU/MAG sensors
+// without blocking motor control or ESP-NOW communication.
+// Priority: 1 (lower than main loop, higher than idle)
+// Core: 0 (separate from main loop on dual-core ESP32)
+// ============================================================================
+
+// FreeRTOS task handle
+static TaskHandle_t sensorTaskHandle = NULL;
+
+// Background sensor reading task
+void sensorReadingTask(void *parameter) {
+  logMessage(false, "SensorTask", "Background sensor task started on core %d", xPortGetCoreID());
+  
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+  const TickType_t xFrequency = pdMS_TO_TICKS(200); // 5Hz update rate (200ms) - Reduced for lower latency
+  
+  while (true) {
+    // Wait for the next cycle (prevents tight loop)
+    vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    
+    // ========================================================================
+    // READ ALL I2C SENSORS HERE TO AVOID BUS CONTENTION
+    // All I2C devices (ADC, IMU, MAG, temp) accessed from same core (Core 0)
+    // This eliminates dual-core I2C bus conflicts
+    // ========================================================================
+    
+    // Read ADC sensors (ADS1115 on I2C) - ONLY if enabled
+    #if SN_USE_ADC == 1
+    xr4_system_context.Main_Bus_V = SN_Sensors_ADCGetParameterValue(ADC_CHANN_BUS_VOLTAGE_MAIN);
+    xr4_system_context.Main_Bus_I = SN_Sensors_ADCGetParameterValue(ADC_CHANN_BUS_CURRENT_MAIN);
+    xr4_system_context.Bus_5V = SN_Sensors_ADCGetParameterValue(ADC_CHANN_BUS_VOLTAGE_5V);
+    xr4_system_context.Bus_3V3 = SN_Sensors_ADCGetParameterValue(ADC_CHANN_BUS_VOLTAGE_3V3);
+    #else
+    xr4_system_context.Main_Bus_V = 0.0;
+    xr4_system_context.Main_Bus_I = 0.0;
+    xr4_system_context.Bus_5V = 0.0;
+    xr4_system_context.Bus_3V3 = 0.0;
+    #endif
+    
+    // Read temperature sensor (DS18B20 on OneWire, not I2C but included for consistency)
+    xr4_system_context.temp = SN_Sensors_GetBatteryTemperature();
+    
+    // Read IMU and compute orientation data
+    #if SN_USE_IMU == 1
+    read_MPU();  // Update MPU sensor readings (MPU6050 on I2C)
+    
+    // Extract pitch and roll angles (in degrees) from MPU
+    float pitch_deg = mpu_sensor.B_angle;  // Pitch (nose up/down)
+    float roll_deg = mpu_sensor.C_angle;   // Roll (left/right tilt)
+    
+    // Store pitch and roll in system context (atomic write for float is safe on ESP32)
+    xr4_system_context.Pitch_Degrees = pitch_deg;
+    xr4_system_context.Roll_Degrees = roll_deg;
+    
+    #if SN_USE_MAGNETOMETER == 1
+      // Read magnetometer data (QMC5883L on I2C)
+      read_MAG();
+      
+      // Convert pitch/roll to radians for tilt compensation
+      float pitch_rad = pitch_deg * PI / 180.0;
+      float roll_rad = roll_deg * PI / 180.0;
+      
+      // Compute tilt-compensated heading using IMU + Magnetometer fusion
+      float tilt_comp_heading = computeTiltCompensatedHeading(
+        (float)mag_sensor.mag_x, 
+        (float)mag_sensor.mag_y, 
+        (float)mag_sensor.mag_z,
+        pitch_rad,
+        roll_rad
+      );
+      
+      xr4_system_context.Heading_Degrees = tilt_comp_heading;
+      
+      // Copy cardinal direction (e.g., "N", "NE", "E")
+      // Note: strncpy is not strictly thread-safe, but 2-byte copy is atomic enough
+      strncpy(xr4_system_context.Heading_Cardinal, mag_sensor.direction, 2);
+      xr4_system_context.Heading_Cardinal[2] = '\0';
+    #else
+      // No magnetometer - use yaw from IMU only (will drift over time)
+      xr4_system_context.Heading_Degrees = mpu_sensor.A_angle;  // Yaw
+      strncpy(xr4_system_context.Heading_Cardinal, "?", 2);
+    #endif
+    
+    #else
+    // IMU not enabled - initialize orientation to zero
+    xr4_system_context.Heading_Degrees = 0.0;
+    strncpy(xr4_system_context.Heading_Cardinal, "N", 2);
+    xr4_system_context.Pitch_Degrees = 0.0;
+    xr4_system_context.Roll_Degrees = 0.0;
+    #endif // SN_USE_IMU
+  }
+}
+
+// Start the background sensor reading task
+void SN_OBC_StartBackgroundSensorTask() {
+  // Only create task if at least one sensor is enabled
+  // This avoids unnecessary FreeRTOS task switching overhead
+  #if (SN_USE_ADC == 1) || (SN_USE_TEMPERATURE_SENSOR == 1) || (SN_USE_IMU == 1) || (SN_USE_MAGNETOMETER == 1)
+  
+  // Create task to avoid I2C bus contention
+  // All I2C devices (ADC, IMU, MAG) must be accessed from same core
+  // Create task with:
+  // - Priority 0 (idle priority, absolutely lowest, never interrupts main loop)
+  // - 4KB stack (enough for sensor calculations)
+  // - Core 0 (separate from main loop on Core 1)
+  BaseType_t result = xTaskCreatePinnedToCore(
+    sensorReadingTask,       // Task function
+    "SensorTask",            // Name
+    4096,                    // Stack size (bytes)
+    NULL,                    // Parameters
+    0,                       // Priority (0 = idle priority, absolutely lowest)
+    &sensorTaskHandle,       // Task handle
+    0                        // Core 0 (main loop typically runs on core 1)
+  );
+  
+  if (result == pdPASS) {
+    logMessage(false, "SensorTask", "Background sensor task created on Core 0");
+  } else {
+    logMessage(false, "SensorTask", "Failed to create background sensor task!");
+  }
+  
+  #else
+  logMessage(false, "SensorTask", "All sensors disabled - background task not created");
+  #endif
+}
+#endif // SN_XR4_BOARD_TYPE == SN_XR4_OBC_ESP32
+
+
 //  ----------------- CTU Handler -----------------
 
 #if SN_XR4_BOARD_TYPE == SN_XR4_CTU_ESP32
@@ -85,7 +217,15 @@ void SN_CTU_MainHandler(){
 
   SN_Telecommand_updateStruct(xr4_system_context);
 
-  SN_ESPNOW_SendTelecommand(TC_C2_DATA_MSG);
+  // Telecommand rate limiting (50Hz = 20ms interval)
+  // Prevents ESP-NOW channel flooding and maintains low latency
+  static unsigned long last_tc_send_time = 0;
+  const unsigned long TC_SEND_INTERVAL_MS = 20;  // 50Hz max rate
+  
+  if (millis() - last_tc_send_time >= TC_SEND_INTERVAL_MS) {
+    SN_ESPNOW_SendTelecommand(TC_C2_DATA_MSG);
+    last_tc_send_time = millis();
+  }
   
   // Update LCD display (non-blocking, updates at configured interval)
   SN_LCD_Update(&xr4_system_context);
@@ -182,82 +322,50 @@ void SN_OBC_ExecuteCommands() {
   // add handling for COMMAND & COMM_MODE
 }
 
-void SN_OBC_DrivingHandler() {
-  // Fast path: check ESTOP/ARM first
-  if(xr4_system_context.Emergency_Stop || !xr4_system_context.Armed) {
+void 
+SN_OBC_DrivingHandler() {
+  if(!xr4_system_context.Emergency_Stop && xr4_system_context.Armed) {
+    // Inline joystick mapping for zero-latency motor response
+    // X-axis is Horizontal Axis of Joystick i.e. Left/Right (steering)
+    // Y-axis is Vertical Joystick axis i.e. Forward/Backward (throttle)
+    int16_t raw_x = (int16_t)OBC_in_telecommand_data.Joystick_X - 2117;
+    int16_t steering = (abs(raw_x) < 50) ? 0 : (int16_t)(((int32_t)OBC_in_telecommand_data.Joystick_X * 200) / 4095) - 100;
+    
+    int16_t raw_y = (int16_t)OBC_in_telecommand_data.Joystick_Y - 2000;
+    int16_t throttle = (abs(raw_y) < 50) ? 0 : (int16_t)(((int32_t)OBC_in_telecommand_data.Joystick_Y * 200) / 4095) - 100;
+    
+  
+    // Differential drive calculation
+    int16_t leftSpeed = - steering - throttle;
+    int16_t rightSpeed = - steering + throttle;
+    
+    // Clamp to valid range
+    if (leftSpeed > 100) leftSpeed = 100;
+    else if (leftSpeed < -100) leftSpeed = -100;
+    if (rightSpeed > 100) rightSpeed = 100;
+    else if (rightSpeed < -100) rightSpeed = -100;
+    
+    // Drive motors IMMEDIATELY - no waiting for main loop!
+    SN_Motors_Drive(leftSpeed, rightSpeed);
+  } else {
+    // Safety: Stop motors if ESTOP or disarmed
     SN_Motors_Drive(0, 0);
-    return;
   }
-  
-  // PERFORMANCE OPTIMIZED: Inline joystick mapping to avoid function call overhead
-  // X-axis (Forward/Backward) with deadband
-  int16_t throttle;
-  int16_t raw_x = (int16_t)xr4_system_context.Joystick_X - 2117;  // Center around neutral
-  if (raw_x > -50 && raw_x < 50) {
-    throttle = 0;  // Deadband
-  } else {
-    // Fast map: (raw - min) * (out_max - out_min) / (in_max - in_min) + out_min
-    throttle = (int16_t)(((int32_t)xr4_system_context.Joystick_X * 200) / 4095) - 100;
-    if (throttle > 100) throttle = 100;
-    if (throttle < -100) throttle = -100;
-  }
-  
-  // Y-axis (Left/Right steering) with deadband
-  int16_t steering;
-  int16_t raw_y = (int16_t)xr4_system_context.Joystick_Y - 2000;  // Center around neutral
-  if (raw_y > -50 && raw_y < 50) {
-    steering = 0;  // Deadband
-  } else {
-    steering = (int16_t)(((int32_t)xr4_system_context.Joystick_Y * 200) / 4095) - 100;
-    if (steering > 100) steering = 100;
-    if (steering < -100) steering = -100;
-  }
-  
-  // STEERING DIRECTION FIX:
-  // If joystick LEFT makes left motors go forward (wrong direction),
-  // uncomment the next line to invert steering:
-  // steering = -steering;
-  
-  // Differential drive calculation (optimized with single clamp operation)
-  // Steering inverted: right stick = right turn
-  int16_t leftSpeed = throttle - steering;
-  int16_t rightSpeed = throttle + steering;
-  
-  // Clamp both in single operation
-  if (leftSpeed > 100) leftSpeed = 100;
-  else if (leftSpeed < -100) leftSpeed = -100;
-  if (rightSpeed > 100) rightSpeed = 100;
-  else if (rightSpeed < -100) rightSpeed = -100;
-  
-  SN_Motors_Drive(leftSpeed, rightSpeed);
 }
 
+
 void SN_OBC_ReadSensors() {
-  // Throttle sensor reading to avoid blocking - read every 250ms
-  static unsigned long lastSensorRead = 0;
-  unsigned long currentTime = millis();
-  
-  if (currentTime - lastSensorRead < 250) {
-    return; // Skip this iteration
-  }
-  lastSensorRead = currentTime;
-  
-  // Read ADC sensors (battery voltage, current, etc.)
-  xr4_system_context.Main_Bus_V = SN_Sensors_ADCGetParameterValue(ADC_CHANN_MAIN_BUS_VOLTAGE);
-  xr4_system_context.Main_Bus_I = SN_Sensors_ADCGetParameterValue(ADC_CHANN_MAIN_BUS_CURRENT);
-  
-  // Read temperature sensor (can be slow)
-  xr4_system_context.temp = SN_Sensors_GetBatteryTemperature();
-  
-  // TODO: Add IMU reading here when SN_USE_IMU is enabled
-  // For now, initialize IMU values to zero if not implemented
-  // xr4_system_context.Gyro_X = 0.0;
-  // xr4_system_context.Gyro_Y = 0.0;
-  // xr4_system_context.Gyro_Z = 0.0;
-  // xr4_system_context.Acc_X = 0.0;
-  // xr4_system_context.Acc_Y = 0.0;
-  // xr4_system_context.Acc_Z = 0.0;
-  
+  // ALL SENSOR READING NOW DONE IN BACKGROUND TASK ON CORE 0
+  // This function is intentionally empty to avoid I2C bus contention
+  // 
+  // Background task (sensorReadingTask on Core 0) reads:
+  //   - ADC (ADS1115) - voltage/current
+  //   - Temperature (DS18B20) 
+  //   - IMU (MPU6050) - orientation
+  //   - Magnetometer (QMC5883L) - heading
+  //
+  // This eliminates dual-core I2C conflicts that cause latency
+  // 
   // RSSI is updated in ESP-NOW receive callback
   // GPS is updated independently via ticker in SN_GPS module
 }
@@ -289,7 +397,7 @@ void SN_OBC_MainHandler(){
 
   // Execute driving commands received from CTU (only if not in watchdog safe mode)
   if (!watchdogActive) {
-    SN_OBC_DrivingHandler();
+    //SN_OBC_DrivingHandler();
   }
 
   // Read sensors and update context
@@ -298,7 +406,7 @@ void SN_OBC_MainHandler(){
   // Update outgoing telemetry data struct using the updated context
   SN_Telemetry_updateStruct(xr4_system_context);
 
-  // Send telemetry data to CTU via ESP-NOW
+  // Send telemetry (has built-in rotation and timing control)
   SN_ESPNOW_SendTelemetry();
 }
 
